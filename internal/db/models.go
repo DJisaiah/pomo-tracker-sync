@@ -1,21 +1,22 @@
 package db
 
-
 type User struct {
 	LoginDetails AuthConfig
-	LoginCrypt AuthCrypt
+	LoginCrypt   AuthCrypt
 }
 
 type AuthConfig struct {
-	Username string
-	Password string
-	Student bool
+	Email      string
+	Username   string
+	Password   string
+	Student    bool
 	LeftHanded bool
 }
 
 type AuthCrypt struct {
-	PasswordHash []byte
-	Salt []byte
-	Token string
-	ValidTil string
+	EmailCipherText []byte
+	PasswordHash    []byte
+	PasswordSalt    []byte
+	Token           string
+	ValidTil        string
 }
