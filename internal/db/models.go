@@ -1,8 +1,8 @@
 package db
 
 type User struct {
-	LoginDetails AuthConfig
-	LoginCrypt   AuthCrypt
+	LoginDetails *AuthConfig
+	LoginCrypt   *AuthCrypt
 }
 
 type AuthConfig struct {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+
 	"github.com/DJisaiah/pomotracker-sync/internal/db"
 )
 
@@ -13,7 +14,7 @@ type application struct {
 }
 
 type tokenResponse struct {
-	token string
+	token    string
 	validTil string
 }
 
@@ -36,27 +37,27 @@ func (app *application) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, v, err := app.sa.registerUser(ac)
+	t, v, err := app.sa.registerUser(&ac)
 	if err != nil {
 		switch {
-			case errors.Is(err, db.ErrUserAlreadyExists):
-				http.Error(w, db.ErrUserAlreadyExists.Error(), http.StatusConflict)
-			case errors.Is(err, db.ErrInvalidUsername):
-				http.Error(w, db.ErrInvalidUsername.Error(), http.StatusBadRequest)
-			case errors.Is(err, db.ErrInvalidPassword):
-				http.Error(w, db.ErrInvalidPassword.Error(), http.StatusBadRequest)
-			case errors.Is(err, db.ErrFailedToRegister):
-				http.Error(w, db.ErrFailedToRegister.Error(), http.StatusInternalServerError)
-			default:
-				log.Printf("unresolved error in user registration: %v", err)
-				http.Error(w, "Internal server error occured. Please try again later.", http.StatusInternalServerError)
+		case errors.Is(err, db.ErrUserAlreadyExists):
+			http.Error(w, db.ErrUserAlreadyExists.Error(), http.StatusConflict)
+		case errors.Is(err, db.ErrInvalidUsername):
+			http.Error(w, db.ErrInvalidUsername.Error(), http.StatusBadRequest)
+		case errors.Is(err, db.ErrInvalidPassword):
+			http.Error(w, db.ErrInvalidPassword.Error(), http.StatusBadRequest)
+		case errors.Is(err, db.ErrFailedToRegister):
+			http.Error(w, db.ErrFailedToRegister.Error(), http.StatusInternalServerError)
+		default:
+			log.Printf("unresolved error in user registration: %v", err)
+			http.Error(w, "Internal server error occured. Please try again later.", http.StatusInternalServerError)
 		}
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	tr := tokenResponse{
-		token: t,
+		token:    t,
 		validTil: v,
 	}
 	if err := json.NewEncoder(w).Encode(tr); err != nil {
@@ -72,7 +73,7 @@ func start(sa serverActions) {
 	mux.HandleFunc("POST /register", app.register)
 
 	srv := &http.Server{
-		Addr: ":8080",
+		Addr:    ":8080",
 		Handler: mux,
 	}
 	err := srv.ListenAndServe()

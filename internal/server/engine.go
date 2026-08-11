@@ -3,12 +3,14 @@ package server
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
-	"hash"
+	"strings"
 
 	"github.com/DJisaiah/pomotracker-sync/internal/db"
 	"github.com/joho/godotenv"
@@ -17,18 +19,30 @@ import (
 
 // built in only encodes doesnt give type that encodes
 // finish next time
-type hmacCipher func(h hash.Hash, key []byte) []byte
+type hmacCipher struct {
+	key []byte
+}
 
 type serverCrypt struct {
 	ask []byte
 	hsk []byte
-	ac  *cipher.Block
+	ac  cipher.Block
 	hmc *hmacCipher
 }
 
 type serverActions struct {
-	q   *db.Queries
-	sc  *serverCrypt
+	q  *db.Queries
+	sc *serverCrypt
+}
+
+// s must be normalised first. #TODO
+// otherwise could lead to unexpected results in blind index lookups.
+func (c *hmacCipher) generate(s string) []byte {
+	// should look into resetting this for concurrent use
+	h := sha256.New
+	ct := hmac.New(h, c.key)
+	ct.Write([]byte(s))
+	return ct.Sum(nil)
 }
 
 func loadEnv() (string, []byte, []byte) {
@@ -83,40 +97,65 @@ func StartServer(q *db.Queries) {
 		log.Fatal("Error creating AES cipher")
 	}
 
-	q, err := db.InitializePool(dsn)
+	q, err = db.InitializePool(dsn)
 	if err != nil {
 		log.Printf("Failed to initialise pool: %v", err)
 	}
 	s := serverActions{
 		q: q,
-		ask: ask,
-		hsk: hsk,
-		aesCipher: &ac,
+		sc: &serverCrypt{
+			ask: ask,
+			hsk: hsk,
+			ac:  ac,
+			hmc: &hmacCipher{
+				key: hsk,
+			},
+		},
 	}
 	start(s)
 }
 
-func (sa serverActions) registerUser(ac db.AuthConfig) (string, string, error) {
+func validateAuthConfig(ac *db.AuthConfig) error {
+	if !db.ValidateEmail(ac.Email) {
+		return db.ErrInvalidEmail
+	} else if !db.ValidatePassword(ac.Password) {
+		return db.ErrInvalidPassword
+	} else if !db.ValidateUsername(ac.Username) {
+		return db.ErrInvalidUsername
+	}
+	return nil
+}
+
+func (sa serverActions) registerUser(ac *db.AuthConfig) (string, string, error) {
+	err := validateAuthConfig(ac)
+	if err != nil {
+		return "", "", err
+	}
+
+	var ect []byte
 	tkn := rand.Text()
 	vTil := "somedate"
 	slt := make([]byte, 32)
 	rand.Read(slt)
 	pH := argon2.IDKey([]byte(ac.Password), slt, 3, 64*1024, 4, 32)
-	ect := sa.
+	// once all the email chars are valid, they just need to be lowercased
+	sa.sc.ac.Encrypt(ect, []byte(strings.ToLower(ac.Email)))
 
 	usr := db.User{
 		LoginDetails: ac,
-		LoginCrypt: db.AuthCrypt{
-			EmailCipherText: ,
-			PasswordHash: pH,
-			PasswordSalt: slt,
-			Token:        tkn,
-			ValidTil:     vTil,
+		LoginCrypt: &db.AuthCrypt{
+			EmailCipherText: ect,
+			PasswordHash:    pH,
+			PasswordSalt:    slt,
+			Token:           tkn,
+			ValidTil:        vTil,
 		},
 	}
-	err := sa.q.AddUser(usr)
+
+	err = sa.q.AddUser(usr)
 	if err != nil {
-		return "", "", err
+		log.Printf("Failed to add user: %v", err)
 	}
+
 	return tkn, vTil, nil
 }
