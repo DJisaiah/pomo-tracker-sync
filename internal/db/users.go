@@ -17,7 +17,15 @@ func (q *Queries) setupUsers()
 
 func (q *Queries) exists(u string) error
 
-func ValidateEmail(e string) bool
+func ValidateEmail(e string) bool {
+	result := true
+
+	if len(e) < 3 || len(e) > 254 {
+		return false
+	}
+
+	return result
+}
 
 func ValidatePassword(p string) bool
 

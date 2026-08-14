@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"hash"
 	"log"
 	"os"
 	"strings"
@@ -17,10 +18,9 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-// built in only encodes doesnt give type that encodes
-// finish next time
 type hmacCipher struct {
 	key []byte
+	c   hash.Hash
 }
 
 type serverCrypt struct {
@@ -37,12 +37,10 @@ type serverActions struct {
 
 // s must be normalised first. #TODO
 // otherwise could lead to unexpected results in blind index lookups.
-func (c *hmacCipher) generate(s string) []byte {
-	// should look into resetting this for concurrent use
-	h := sha256.New
-	ct := hmac.New(h, c.key)
-	ct.Write([]byte(s))
-	return ct.Sum(nil)
+func (hmc *hmacCipher) generate(s string) []byte {
+	hmc.c.Reset()
+	hmc.c.Write([]byte(s))
+	return hmc.c.Sum(nil)
 }
 
 func loadEnv() (string, []byte, []byte) {
@@ -101,7 +99,8 @@ func StartServer(q *db.Queries) {
 	if err != nil {
 		log.Printf("Failed to initialise pool: %v", err)
 	}
-	s := serverActions{
+
+	sa := serverActions{
 		q: q,
 		sc: &serverCrypt{
 			ask: ask,
@@ -109,10 +108,11 @@ func StartServer(q *db.Queries) {
 			ac:  ac,
 			hmc: &hmacCipher{
 				key: hsk,
+				c:   hmac.New(sha256.New, hsk),
 			},
 		},
 	}
-	start(s)
+	start(sa)
 }
 
 func validateAuthConfig(ac *db.AuthConfig) error {
@@ -134,7 +134,7 @@ func (sa serverActions) registerUser(ac *db.AuthConfig) (string, string, error) 
 
 	var ect []byte
 	tkn := rand.Text()
-	vTil := "somedate"
+	vTil := "somedate" //TODO
 	slt := make([]byte, 32)
 	rand.Read(slt)
 	pH := argon2.IDKey([]byte(ac.Password), slt, 3, 64*1024, 4, 32)
