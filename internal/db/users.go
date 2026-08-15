@@ -17,14 +17,50 @@ func (q *Queries) setupUsers()
 
 func (q *Queries) exists(u string) error
 
-func ValidateEmail(e string) bool {
-	result := true
+func validLocalPart(c byte) bool {
+	switch {
+	case c >= 97 && c <= 122: // a-z
+		return false
+	case c >= 65 && c <= 90: // A-Z
+		return false
+	case c >= 48 && c <= 57: // 0-9
+		return false
+	case c == 46 || c == 95 || c == 45 || c == 43 || c == 37: // ._+-%
+		return false
+	default:
+		return true
+	}
+}
 
+// follows RFC 5322
+func ValidateEmail(e string) bool {
 	if len(e) < 3 || len(e) > 254 {
 		return false
 	}
 
-	return result
+	for i, bfATR := 0, true; i < len(e); i++ {
+		c := e[i]
+		if c < 33 || c > 126 {
+			return false
+		} else if c == '@' {
+			if bfATR {
+				return false
+			}
+			bfATR = false
+		}
+
+		if bfATR {
+			if c == 0 || c > 64 {
+				return false
+			} else if !validLocalPart(c) {
+				return false
+			} else if i == 0 &&  {
+
+			}
+		}
+	}
+
+	return true
 }
 
 func ValidatePassword(p string) bool
