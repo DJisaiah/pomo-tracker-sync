@@ -17,49 +17,118 @@ func (q *Queries) setupUsers()
 
 func (q *Queries) exists(u string) error
 
-func validLocalPart(c byte) bool {
+func isAlpabetic(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+func isAlphanumeric(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+}
+
+func validPartChar(c byte, isDomain bool, isTLD bool) bool {
 	switch {
-	case c >= 97 && c <= 122: // a-z
-		return false
-	case c >= 65 && c <= 90: // A-Z
-		return false
-	case c >= 48 && c <= 57: // 0-9
-		return false
-	case c == 46 || c == 95 || c == 45 || c == 43 || c == 37: // ._+-%
-		return false
-	default:
+	case isAlpabetic(c):
 		return true
+	case !isTLD && (c >= '0' && c <= '9'):
+		return true
+	case !isTLD && !isDomain && (c == '.' || c == '_' || c == '-' || c == '+' || c == '%'):
+		return true
+	case !isTLD && isDomain && (c == '.' || c == '-'):
+		return true
+	default:
+		return false
 	}
 }
 
-// follows RFC 5322
+func nextCharIs(e string, c byte, i int) bool {
+	if i >= 0 && i < len(e)-1 {
+		if e[i+1] == c {
+			return true
+		}
+	}
+	return false
+}
+
+func nextCharIsFn(e string, c byte, i int, fn func(byte) bool) bool {
+	if i >= 0 && i < len(e)-1 {
+		return fn(e[i+1])
+	}
+	return false
+}
+
+func prevCharIs(e string, c byte, i int) bool {
+	if i > 0 && i < len(e)-1 {
+		if e[i-1] == c {
+			return true
+		}
+	}
+	return false
+}
+
+func prevCharIsFn(e string, i int, fn func(byte) bool) bool {
+	if i > 0 && i < len(e)-1 {
+		return fn(e[i-1])
+	}
+	return false
+}
+
+// WHATWG HTML5 specification combined with OWASP defensive validation
+// stdlib accepts legacy features which we don't want esp ito security
 func ValidateEmail(e string) bool {
-	if len(e) < 3 || len(e) > 254 {
+	l := len(e)
+	if l < 3 || l > 254 {
+		return false
+	} else if e[0] == '.' || e[l-1] == '.' { // cannot start/end with a dot
+		return false
+		// alphanumeric start
+	} else if !isAlphanumeric(e[0]) {
+		return false
+		// alphabetic end
+	} else if !isAlpabetic(e[l-1]) {
 		return false
 	}
 
-	for i, bfATR := 0, true; i < len(e); i++ {
+	atr, tld := false, false
+	tldI := -1
+	for i := 0; i < l; i++ {
 		c := e[i]
-		if c < 33 || c > 126 {
+		if !validPartChar(c, atr, tld) { // local and domain specific rules
 			return false
 		} else if c == '@' {
-			if bfATR {
+			if atr { // only 1 @ allowed
+				return false
+			} else if i < 1 || i > 64 { // Local part must be between 1 and 64 characters long
+				return false
+			} else if prevCharIs(e, '.', i) { // Local part cannot end with a dot
+				return false
+			} else if nextCharIs(e, '.', i) || nextCharIs(e, '-', i) { // cant start with a dot after @
 				return false
 			}
-			bfATR = false
-		}
-
-		if bfATR {
-			if c == 0 || c > 64 {
+			atr = true
+			// hyphen rules
+		} else if c == '-' && (prevCharIs(e, '.', i) || nextCharIs(e, '.', i)) {
+			return false
+		} else if atr {
+			if c == '.' {
+				if nextCharIs(e, '.', i) { // cannot have consecutive dots
+					return false
+				}
+				tldI = i + 1
+				tld = true
+			} else if c == '-' && prevCharIs(e, '@', i) {
 				return false
-			} else if !validLocalPart(c) {
-				return false
-			} else if i == 0 &&  {
-
 			}
+		} else if tld {
+
 		}
 	}
-
+	if !atr {
+		return false // minimum 1 @
+	} else if !tld {
+		return false // needs a top level domain
+	} else if tld && (l-tldI < 2) { // tld must be at least 2 chars long
+		return false
+	}
 	return true
 }
 
