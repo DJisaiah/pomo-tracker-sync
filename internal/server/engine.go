@@ -18,16 +18,18 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
+// TODO alter variable names and switch aes cipher blocks to gcm
+
 type hmacCipher struct {
 	key []byte
 	c   hash.Hash
 }
 
 type serverCrypt struct {
-	ask []byte
-	hsk []byte
-	ac  cipher.Block
-	hmc *hmacCipher
+	AESMasterKey []byte
+	hsk          []byte
+	aesGCM       cipher.AEAD
+	hMAC         *hmacCipher
 }
 
 type serverActions struct {
@@ -89,10 +91,14 @@ func loadEnv() (string, []byte, []byte) {
 }
 
 func StartServer(q *db.Queries) {
-	dsn, ask, hsk := loadEnv()
-	ac, err := aes.NewCipher(ask)
+	dsn, ask, hSK := loadEnv()
+	aesC, err := aes.NewCipher(ask)
 	if err != nil {
 		log.Fatal("Error creating AES cipher")
+	}
+	aesGCMc, err := cipher.NewGCM(ac)
+	if err != nil {
+		log.Fatal("Error creating AES-GCM cipher")
 	}
 
 	q, err = db.InitializePool(dsn)
@@ -103,10 +109,10 @@ func StartServer(q *db.Queries) {
 	sa := serverActions{
 		q: q,
 		sc: &serverCrypt{
-			ask: ask,
-			hsk: hsk,
-			ac:  ac,
-			hmc: &hmacCipher{
+			ask:    ask,
+			hsk:    hsk,
+			aesGCM: aesGCMc,
+			hMAC: &hmacCipher{
 				key: hsk,
 				c:   hmac.New(sha256.New, hsk),
 			},
@@ -134,7 +140,7 @@ func (sa serverActions) registerUser(ac *db.AuthConfig) (string, string, error) 
 
 	var ect []byte
 	tkn := rand.Text()
-	vTil := "somedate" //TODO
+	vTil := "somedate" // TODO
 	slt := make([]byte, 32)
 	rand.Read(slt)
 	pH := argon2.IDKey([]byte(ac.Password), slt, 3, 64*1024, 4, 32)
@@ -152,6 +158,7 @@ func (sa serverActions) registerUser(ac *db.AuthConfig) (string, string, error) 
 		},
 	}
 
+	// handle this in handler TODO
 	err = sa.q.AddUser(usr)
 	if err != nil {
 		log.Printf("Failed to add user: %v", err)

@@ -14,6 +14,7 @@ type AuthConfig struct {
 }
 
 type AuthCrypt struct {
+	EmailBlindIndex []byte
 	EmailCipherText []byte
 	PasswordHash    []byte
 	PasswordSalt    []byte

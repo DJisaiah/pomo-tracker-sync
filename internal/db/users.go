@@ -25,15 +25,15 @@ func isAlphanumeric(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 }
 
-func validPartChar(c byte, isDomain bool, isTLD bool) bool {
+func validPartChar(c byte, isDomain bool) bool {
 	switch {
 	case isAlpabetic(c):
 		return true
-	case !isTLD && (c >= '0' && c <= '9'):
+	case (c >= '0' && c <= '9'):
 		return true
-	case !isTLD && !isDomain && (c == '.' || c == '_' || c == '-' || c == '+' || c == '%'):
+	case !isDomain && (c == '.' || c == '_' || c == '-' || c == '+' || c == '%' || c == '@'):
 		return true
-	case !isTLD && isDomain && (c == '.' || c == '-'):
+	case isDomain && (c == '.' || c == '-'):
 		return true
 	default:
 		return false
@@ -57,7 +57,7 @@ func nextCharIsFn(e string, c byte, i int, fn func(byte) bool) bool {
 }
 
 func prevCharIs(e string, c byte, i int) bool {
-	if i > 0 && i < len(e)-1 {
+	if i > 0 && i < len(e) {
 		if e[i-1] == c {
 			return true
 		}
@@ -66,7 +66,7 @@ func prevCharIs(e string, c byte, i int) bool {
 }
 
 func prevCharIsFn(e string, i int, fn func(byte) bool) bool {
-	if i > 0 && i < len(e)-1 {
+	if i > 0 && i < len(e) {
 		return fn(e[i-1])
 	}
 	return false
@@ -78,13 +78,10 @@ func ValidateEmail(e string) bool {
 	l := len(e)
 	if l < 3 || l > 254 {
 		return false
-	} else if e[0] == '.' || e[l-1] == '.' { // cannot start/end with a dot
+
+	} else if !isAlphanumeric(e[0]) { // alphanumeric start
 		return false
-		// alphanumeric start
-	} else if !isAlphanumeric(e[0]) {
-		return false
-		// alphabetic end
-	} else if !isAlpabetic(e[l-1]) {
+	} else if !isAlpabetic(e[l-1]) { // alphabetic end
 		return false
 	}
 
@@ -92,22 +89,28 @@ func ValidateEmail(e string) bool {
 	tldI := -1
 	for i := 0; i < l; i++ {
 		c := e[i]
-		if !validPartChar(c, atr, tld) { // local and domain specific rules
+		if !validPartChar(c, atr) { // local and domain character whitelist
 			return false
 		} else if c == '@' {
 			if atr { // only 1 @ allowed
 				return false
 			} else if i < 1 || i > 64 { // Local part must be between 1 and 64 characters long
 				return false
-			} else if prevCharIs(e, '.', i) { // Local part cannot end with a dot
+			} else if !prevCharIsFn(e, i, isAlphanumeric) { // Local part cannot end non alphanumeric
 				return false
-			} else if nextCharIs(e, '.', i) || nextCharIs(e, '-', i) { // cant start with a dot after @
+			} else if nextCharIs(e, '.', i) || nextCharIs(e, '-', i) { // cant start with a dot/hyphen after @
 				return false
 			}
 			atr = true
 			// hyphen rules
 		} else if c == '-' && (prevCharIs(e, '.', i) || nextCharIs(e, '.', i)) {
 			return false
+		} else if !atr {
+			if !isAlphanumeric(c) { // no adjacent symbols
+				if !prevCharIsFn(e, i, isAlphanumeric) {
+					return false
+				}
+			}
 		} else if atr {
 			if c == '.' {
 				if nextCharIs(e, '.', i) { // cannot have consecutive dots
@@ -115,19 +118,22 @@ func ValidateEmail(e string) bool {
 				}
 				tldI = i + 1
 				tld = true
-			} else if c == '-' && prevCharIs(e, '@', i) {
-				return false
 			}
-		} else if tld {
-
 		}
 	}
+
 	if !atr {
 		return false // minimum 1 @
 	} else if !tld {
 		return false // needs a top level domain
 	} else if tld && (l-tldI < 2) { // tld must be at least 2 chars long
 		return false
+	} else if tld {
+		for i := tldI; i < len(e); i++ {
+			if !isAlpabetic(e[i]) {
+				return false // tld must be alphabetic
+			}
+		}
 	}
 	return true
 }
@@ -140,18 +146,19 @@ func Login() error {
 	return nil
 }
 
-// probably gonna remove some of this since engine check first
 func (q *Queries) AddUser(u User) error {
 	qry := `
-		INSERT INTO users(username, password, salt, student, leftHanded)
-		VALUES ($1, $2, $3, $4, $4)
+		INSERT INTO users(email_bid, encrypted_email, username, encrypted_password, salt, student, left_handed)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
 	_, err := q.pool.Exec(
 		context.Background(),
 		qry,
+		u.LoginCrypt.EmailBlindIndex,
+		u.LoginDetails.Email,
 		u.LoginDetails.Username,
 		u.LoginCrypt.PasswordHash,
-		u.LoginCrypt.Salt,
+		u.LoginCrypt.PasswordSalt,
 		u.LoginDetails.Student,
 		u.LoginDetails.LeftHanded,
 	)
