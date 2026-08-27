@@ -10,12 +10,11 @@ import (
 )
 
 type application struct {
-	sa serverActions
+	sa *serverActions
 }
 
-type tokenResponse struct {
-	token    string
-	validTil string
+type registerOrLoginResponse struct {
+	refreshToken string
 }
 
 // only accept POST and json on this endpoint
@@ -37,7 +36,7 @@ func (app *application) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, v, err := app.sa.registerUser(&ac)
+	t, err := app.sa.registerUser(&ac)
 	if err != nil {
 		switch {
 		case errors.Is(err, db.ErrUserAlreadyExists):
@@ -56,9 +55,8 @@ func (app *application) register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	tr := tokenResponse{
-		token:    t,
-		validTil: v,
+	tr := registerOrLoginResponse{
+		refreshToken: t,
 	}
 	if err := json.NewEncoder(w).Encode(tr); err != nil {
 		log.Printf("unresolved error in token encoding: %v", err)
@@ -67,7 +65,7 @@ func (app *application) register(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func start(sa serverActions) {
+func start(sa *serverActions) {
 	app := application{sa: sa}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /register", app.register)

@@ -12,13 +12,13 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/DJisaiah/pomotracker-sync/internal/db"
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/argon2"
 )
-
-// TODO alter variable names and switch aes cipher blocks to gcm
 
 type hmacCipher struct {
 	key []byte
@@ -26,10 +26,10 @@ type hmacCipher struct {
 }
 
 type serverCrypt struct {
-	AESMasterKey []byte
-	hsk          []byte
-	aesGCM       cipher.AEAD
-	hMAC         *hmacCipher
+	aesMasterKey  []byte
+	hashMasterKey []byte
+	aesGCM        cipher.AEAD
+	hmac          *hmacCipher
 }
 
 type serverActions struct {
@@ -37,12 +37,12 @@ type serverActions struct {
 	sc *serverCrypt
 }
 
-// s must be normalised first. #TODO
+// s must be normalised first.
 // otherwise could lead to unexpected results in blind index lookups.
-func (hmc *hmacCipher) generate(s string) []byte {
-	hmc.c.Reset()
-	hmc.c.Write([]byte(s))
-	return hmc.c.Sum(nil)
+func (hmC *hmacCipher) generate(s string) []byte {
+	hmC.c.Reset()
+	hmC.c.Write([]byte(s))
+	return hmC.c.Sum(nil)
 }
 
 func loadEnv() (string, []byte, []byte) {
@@ -56,52 +56,52 @@ func loadEnv() (string, []byte, []byte) {
 	}
 	defer env.Close()
 
-	dsn, dsnExists := os.LookupEnv("DATABASE_URL")
-	if !dsnExists {
+	dbURL, dbExists := os.LookupEnv("DATABASE_URL")
+	if !dbExists {
 		log.Fatal("Error connecting to db")
 	}
 
-	var ask, hsk []byte
-	askStr, aesExists := os.LookupEnv("AES_SECRET_KEY")
+	var aesMasterKey, hmacMasterKey []byte
+	aesKEncoded, aesExists := os.LookupEnv("AES_MASTER_KEY")
 	if !aesExists {
 		b := make([]byte, 32)
 		rand.Read(b)
-		ask = b
-		env.WriteString(fmt.Sprintf("AES_SECRET_KEY=%s\n", base64.StdEncoding.EncodeToString(b)))
+		aesMasterKey = b
+		env.WriteString(fmt.Sprintf("AES_MASTER_KEY=%s\n", base64.StdEncoding.EncodeToString(b)))
 	} else {
-		ask, err = base64.StdEncoding.DecodeString(askStr)
+		aesMasterKey, err = base64.StdEncoding.DecodeString(aesKEncoded)
 		if err != nil {
 			log.Fatal("Error decoding AES secret key")
 		}
 	}
 
-	hskStr, hskExists := os.LookupEnv("HASH_SECRET_KEY")
+	hmKEncoded, hskExists := os.LookupEnv("HASH_MASTER_KEY")
 	if !hskExists {
 		b := make([]byte, 32)
 		rand.Read(b)
-		hsk = b
-		env.WriteString(fmt.Sprintf("HASH_SECRET_KEY=%s\n", base64.StdEncoding.EncodeToString(b)))
+		hmacMasterKey = b
+		env.WriteString(fmt.Sprintf("HASH_MASTER_KEY=%s\n", base64.StdEncoding.EncodeToString(b)))
 	} else {
-		hsk, err = base64.StdEncoding.DecodeString(hskStr)
+		hmacMasterKey, err = base64.StdEncoding.DecodeString(hmKEncoded)
 		if err != nil {
 			log.Fatal("Error decoding hash secret key")
 		}
 	}
-	return dsn, ask, hsk
+	return dbURL, aesMasterKey, hmacMasterKey
 }
 
 func StartServer(q *db.Queries) {
-	dsn, ask, hSK := loadEnv()
-	aesC, err := aes.NewCipher(ask)
+	dbURL, aesMasterKey, hashMasterKey := loadEnv()
+	aesC, err := aes.NewCipher(aesMasterKey)
 	if err != nil {
 		log.Fatal("Error creating AES cipher")
 	}
-	aesGCMc, err := cipher.NewGCM(ac)
+	aesGCMc, err := cipher.NewGCM(aesC)
 	if err != nil {
 		log.Fatal("Error creating AES-GCM cipher")
 	}
 
-	q, err = db.InitializePool(dsn)
+	q, err = db.InitializePool(dbURL)
 	if err != nil {
 		log.Printf("Failed to initialise pool: %v", err)
 	}
@@ -109,16 +109,16 @@ func StartServer(q *db.Queries) {
 	sa := serverActions{
 		q: q,
 		sc: &serverCrypt{
-			ask:    ask,
-			hsk:    hsk,
-			aesGCM: aesGCMc,
-			hMAC: &hmacCipher{
-				key: hsk,
-				c:   hmac.New(sha256.New, hsk),
+			aesMasterKey:  aesMasterKey,
+			hashMasterKey: hashMasterKey,
+			aesGCM:        aesGCMc,
+			hmac: &hmacCipher{
+				key: hashMasterKey,
+				c:   hmac.New(sha256.New, hashMasterKey),
 			},
 		},
 	}
-	start(sa)
+	start(&sa)
 }
 
 func validateAuthConfig(ac *db.AuthConfig) error {
@@ -132,29 +132,48 @@ func validateAuthConfig(ac *db.AuthConfig) error {
 	return nil
 }
 
-func (sa serverActions) registerUser(ac *db.AuthConfig) (string, string, error) {
+func (sa serverActions) registerUser(ac *db.AuthConfig) (string, error) {
 	err := validateAuthConfig(ac)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
-	var ect []byte
+	ac.Email = strings.ToLower(ac.Email)
+	ac.Username = strings.ToLower(ac.Username)
+
+	uuid, err := uuid.NewV7()
+	if err != nil {
+		log.Printf("Failed to generate UUID: %v", err)
+		return "", err
+	}
+
 	tkn := rand.Text()
-	vTil := "somedate" // TODO
+	vTil := time.Now().UTC().AddDate(0, 0, 14)
+
 	slt := make([]byte, 32)
 	rand.Read(slt)
+	// recommended less memory intensive options for time, memory, and threads
 	pH := argon2.IDKey([]byte(ac.Password), slt, 3, 64*1024, 4, 32)
-	// once all the email chars are valid, they just need to be lowercased
-	sa.sc.ac.Encrypt(ect, []byte(strings.ToLower(ac.Email)))
+
+	eBI := sa.sc.hmac.generate(ac.Email)
+
+	aesNonce := make([]byte, 12)
+	rand.Read(aesNonce)
+	// ciphertextblob consists of nonce + ciphertext + authtag
+	dst := make([]byte, sa.sc.aesGCM.NonceSize()+len(ac.Email)+sa.sc.aesGCM.Overhead())
+	dst = append(dst, aesNonce...)
+	eCtB := sa.sc.aesGCM.Seal(dst, aesNonce, []byte(ac.Email), uuid[:])
 
 	usr := db.User{
 		LoginDetails: ac,
 		LoginCrypt: &db.AuthCrypt{
-			EmailCipherText: ect,
-			PasswordHash:    pH,
-			PasswordSalt:    slt,
-			Token:           tkn,
-			ValidTil:        vTil,
+			UUID:                uuid,
+			EmailBlindIndex:     eBI,
+			EmailCipherTextBlob: eCtB,
+			PasswordHash:        pH,
+			PasswordSalt:        slt,
+			Token:               tkn,
+			ValidTil:            vTil,
 		},
 	}
 
@@ -164,5 +183,5 @@ func (sa serverActions) registerUser(ac *db.AuthConfig) (string, string, error) 
 		log.Printf("Failed to add user: %v", err)
 	}
 
-	return tkn, vTil, nil
+	return tkn, nil
 }

@@ -1,5 +1,11 @@
 package db
 
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
+
 type User struct {
 	LoginDetails *AuthConfig
 	LoginCrypt   *AuthCrypt
@@ -14,10 +20,11 @@ type AuthConfig struct {
 }
 
 type AuthCrypt struct {
-	EmailBlindIndex []byte
-	EmailCipherText []byte
-	PasswordHash    []byte
-	PasswordSalt    []byte
-	Token           string
-	ValidTil        string
+	UUID                uuid.UUID
+	EmailBlindIndex     []byte
+	EmailCipherTextBlob []byte
+	PasswordHash        []byte
+	PasswordSalt        []byte
+	Token               string
+	ValidTil            time.Time
 }

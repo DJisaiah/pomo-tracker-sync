@@ -138,7 +138,20 @@ func ValidateEmail(e string) bool {
 	return true
 }
 
-func ValidatePassword(p string) bool
+func weakPassword(p string) bool // TODO
+// if contains username, email prefix, or app name
+// if in the most common passwords list
+
+func ValidatePassword(p string) bool {
+	switch {
+	case 15 < len(p) && len(p) > 64:
+		return false
+	case weakPassword(p):
+		return false
+	default:
+		return true
+	}
+}
 
 func ValidateUsername(u string) bool
 

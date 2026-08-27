@@ -11,8 +11,8 @@ type Queries struct {
 	pool *pgxpool.Pool
 }
 
-func InitializePool(dsn string) (*Queries, error) {
-	pool, err := pgxpool.New(context.Background(), dsn)
+func InitializePool(dbURL string) (*Queries, error) {
+	pool, err := pgxpool.New(context.Background(), dbURL)
 	q := &Queries{pool: pool}
 	if err != nil {
 		return nil, err
