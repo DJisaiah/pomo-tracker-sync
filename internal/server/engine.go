@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/DJisaiah/pomotracker-sync/internal/db"
+	"github.com/DJisaiah/pomotracker-sync/internal/validation"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/argon2"
@@ -33,8 +34,9 @@ type serverCrypt struct {
 }
 
 type serverActions struct {
-	q  *db.Queries
-	sc *serverCrypt
+	queries   *db.Queries
+	crypt     *serverCrypt
+	validator *validation.Validator
 }
 
 // s must be normalised first.
@@ -106,9 +108,14 @@ func StartServer(q *db.Queries) {
 		log.Printf("Failed to initialise pool: %v", err)
 	}
 
+	v, err := validation.NewValidator()
+	if err != nil {
+		log.Fatal("Error creating validator")
+	}
+
 	sa := serverActions{
-		q: q,
-		sc: &serverCrypt{
+		queries: q,
+		crypt: &serverCrypt{
 			aesMasterKey:  aesMasterKey,
 			hashMasterKey: hashMasterKey,
 			aesGCM:        aesGCMc,
@@ -117,23 +124,24 @@ func StartServer(q *db.Queries) {
 				c:   hmac.New(sha256.New, hashMasterKey),
 			},
 		},
+		validator: v,
 	}
 	start(&sa)
 }
 
-func validateAuthConfig(ac *db.AuthConfig) error {
-	if !db.ValidateEmail(ac.Email) {
+func (sa *serverActions) validateAuthConfig(ac *db.AuthConfig) error {
+	if !sa.validator.Email(ac.Email) {
 		return db.ErrInvalidEmail
-	} else if !db.ValidatePassword(ac.Password) {
+	} else if !sa.validator.Password(ac.Password) {
 		return db.ErrInvalidPassword
-	} else if !db.ValidateUsername(ac.Username) {
+	} else if !sa.validator.Username(ac.Username) {
 		return db.ErrInvalidUsername
 	}
 	return nil
 }
 
-func (sa serverActions) registerUser(ac *db.AuthConfig) (string, error) {
-	err := validateAuthConfig(ac)
+func (sa *serverActions) registerUser(ac *db.AuthConfig) (string, error) {
+	err := sa.validateAuthConfig(ac)
 	if err != nil {
 		return "", err
 	}
@@ -155,14 +163,14 @@ func (sa serverActions) registerUser(ac *db.AuthConfig) (string, error) {
 	// recommended less memory intensive options for time, memory, and threads
 	pH := argon2.IDKey([]byte(ac.Password), slt, 3, 64*1024, 4, 32)
 
-	eBI := sa.sc.hmac.generate(ac.Email)
+	eBI := sa.crypt.hmac.generate(ac.Email)
 
 	aesNonce := make([]byte, 12)
 	rand.Read(aesNonce)
 	// ciphertextblob consists of nonce + ciphertext + authtag
-	dst := make([]byte, sa.sc.aesGCM.NonceSize()+len(ac.Email)+sa.sc.aesGCM.Overhead())
+	dst := make([]byte, sa.crypt.aesGCM.NonceSize()+len(ac.Email)+sa.crypt.aesGCM.Overhead())
 	dst = append(dst, aesNonce...)
-	eCtB := sa.sc.aesGCM.Seal(dst, aesNonce, []byte(ac.Email), uuid[:])
+	eCtB := sa.crypt.aesGCM.Seal(dst, aesNonce, []byte(ac.Email), uuid[:])
 
 	usr := db.User{
 		LoginDetails: ac,
@@ -178,7 +186,7 @@ func (sa serverActions) registerUser(ac *db.AuthConfig) (string, error) {
 	}
 
 	// handle this in handler TODO
-	err = sa.q.AddUser(usr)
+	err = sa.queries.AddUser(usr)
 	if err != nil {
 		log.Printf("Failed to add user: %v", err)
 	}
