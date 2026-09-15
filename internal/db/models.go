@@ -25,6 +25,6 @@ type AuthCrypt struct {
 	EmailCipherTextBlob []byte
 	PasswordHash        []byte
 	PasswordSalt        []byte
-	Token               string
+	RefreshToken        string
 	ValidTil            time.Time
 }

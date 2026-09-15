@@ -10,7 +10,7 @@ type Validator struct {
 }
 
 func NewValidator() (*Validator, error) {
-	v := Validator{}
+	v := Validator{make(map[string]struct{}), make(map[string]struct{})}
 	if err := v.loadPasswords(); err != nil {
 		log.Printf("Failed to load common passwords: %s", err)
 		return nil, err

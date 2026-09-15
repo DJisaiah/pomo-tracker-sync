@@ -140,19 +140,11 @@ func (sa *serverActions) validateAuthConfig(ac *db.AuthConfig) error {
 	return nil
 }
 
-func (sa *serverActions) registerUser(ac *db.AuthConfig) (string, error) {
-	err := sa.validateAuthConfig(ac)
-	if err != nil {
-		return "", err
-	}
-
-	ac.Email = strings.ToLower(ac.Email)
-	ac.Username = strings.ToLower(ac.Username)
-
+func (sa *serverActions) generateUserCrypt(ac *db.AuthConfig) (*db.AuthCrypt, error) {
 	uuid, err := uuid.NewV7()
 	if err != nil {
 		log.Printf("Failed to generate UUID: %v", err)
-		return "", err
+		return nil, err
 	}
 
 	tkn := rand.Text()
@@ -170,26 +162,44 @@ func (sa *serverActions) registerUser(ac *db.AuthConfig) (string, error) {
 	// ciphertextblob consists of nonce + ciphertext + authtag
 	dst := make([]byte, sa.crypt.aesGCM.NonceSize()+len(ac.Email)+sa.crypt.aesGCM.Overhead())
 	dst = append(dst, aesNonce...)
+
 	eCtB := sa.crypt.aesGCM.Seal(dst, aesNonce, []byte(ac.Email), uuid[:])
+
+	return &db.AuthCrypt{
+		UUID:                uuid,
+		EmailBlindIndex:     eBI,
+		EmailCipherTextBlob: eCtB,
+		PasswordHash:        pH,
+		PasswordSalt:        slt,
+		RefreshToken:        tkn,
+		ValidTil:            vTil,
+	}, nil
+}
+
+func (sa *serverActions) registerUser(ac *db.AuthConfig) (string, error) {
+	err := sa.validateAuthConfig(ac)
+	if err != nil {
+		return "", err
+	}
+
+	ac.Email = strings.ToLower(ac.Email)
+
+	lc, err := sa.generateUserCrypt(ac)
+	if err != nil {
+		return "", err
+	}
 
 	usr := db.User{
 		LoginDetails: ac,
-		LoginCrypt: &db.AuthCrypt{
-			UUID:                uuid,
-			EmailBlindIndex:     eBI,
-			EmailCipherTextBlob: eCtB,
-			PasswordHash:        pH,
-			PasswordSalt:        slt,
-			Token:               tkn,
-			ValidTil:            vTil,
-		},
+		LoginCrypt:   lc,
 	}
 
 	// handle this in handler TODO
 	err = sa.queries.AddUser(usr)
 	if err != nil {
 		log.Printf("Failed to add user: %v", err)
+		return "", err
 	}
 
-	return tkn, nil
+	return lc.RefreshToken, nil
 }

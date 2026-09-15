@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/DJisaiah/pomotracker-sync/internal/chars"
 )
@@ -28,7 +29,7 @@ func validPartChar(c byte, isDomain bool) bool {
 // stdlib accepts legacy features which we don't want esp ito security
 func (v *Validator) Email(e string) bool {
 	l := len(e)
-	if l < 3 || l > 254 {
+	if l < 6 || l > 254 { // needs to be 6 considering TLD must be min 2
 		return false
 
 	} else if !chars.IsAlphanumeric(e[0]) { // alphanumeric start
@@ -39,7 +40,7 @@ func (v *Validator) Email(e string) bool {
 
 	atr, tld := false, false
 	tldI := -1
-	for i := 0; i < l; i++ {
+	for i := range l {
 		c := e[i]
 		if !validPartChar(c, atr) { // local and domain character whitelist
 			return false
@@ -109,10 +110,19 @@ func (v *Validator) loadPasswords() error {
 }
 
 func (v *Validator) Password(p string) bool {
-	if 15 < len(p) && len(p) > 64 {
+	l := len(p)
+	if l < 15 || l > 64 {
 		return false
 	}
-	if _, ok := v.commonPasswords[p]; ok {
+
+	for i := range l {
+		if !chars.IsPrintableASCII(p[i]) {
+			return false
+		}
+	}
+
+	np := strings.ToLower(p)
+	if _, ok := v.commonPasswords[np]; ok {
 		return false
 	}
 	return true
@@ -137,24 +147,20 @@ func (v *Validator) loadUsernames() error {
 	return nil
 }
 
-// username must be normalised before validation
 func (v *Validator) Username(u string) bool {
-	l := len(u)
+	nu := strings.ToLower(u)
+	l := len(nu)
 	if l < 3 || l > 30 {
-		return false
-	} else if !chars.IsAlphanumeric(u[0]) { // alphanumeric start
-		return false
-	} else if !chars.IsAlpabetic(u[l-1]) { // alphabetic end
 		return false
 	}
 
-	for i := 1; i < l-1; i++ {
-		if !chars.IsAlphanumeric(u[i]) {
+	for i := range l {
+		if !chars.IsAlphanumeric(nu[i]) {
 			return false
 		}
 	}
 
-	if _, ok := v.disallowedUsernames[u]; ok {
+	if _, ok := v.disallowedUsernames[nu]; ok {
 		return false
 	}
 
