@@ -10,82 +10,88 @@ import (
 	"github.com/DJisaiah/pomotracker-sync/internal/chars"
 )
 
-func validPartChar(c byte, isDomain bool) bool {
-	switch {
-	case chars.IsAlpabetic(c):
-		return true
-	case (c >= '0' && c <= '9'):
-		return true
-	case !isDomain && (c == '.' || c == '_' || c == '-' || c == '+' || c == '%' || c == '@'):
-		return true
-	case isDomain && (c == '.' || c == '-'):
+func domainWhitelist(c byte) bool {
+	switch c {
+	case '.', '-':
 		return true
 	default:
-		return false
+		return chars.IsAlphanumeric(c)
 	}
 }
 
-// WHATWG HTML5 specification combined with OWASP defensive validation
-// stdlib accepts legacy features which we don't want esp ito security
+func localWhitelist(c byte) bool {
+	switch c {
+	case '.', '_', '-', '+', '%':
+		return true
+	default:
+		return chars.IsAlphanumeric(c)
+	}
+}
+
 func (v *Validator) Email(e string) bool {
 	l := len(e)
 	if l < 6 || l > 254 { // needs to be 6 considering TLD must be min 2
 		return false
-
 	} else if !chars.IsAlphanumeric(e[0]) { // alphanumeric start
 		return false
 	} else if !chars.IsAlpabetic(e[l-1]) { // alphabetic end
 		return false
 	}
 
-	atr, tld := false, false
-	tldI := -1
+	inLocal, inDomain := true, false
+	priorNonAlpha := false
+	domainLabelLength := 0
+	tldIndex := -1
 	for i := range l {
 		c := e[i]
-		if !validPartChar(c, atr) { // local and domain character whitelist
-			return false
-		} else if c == '@' {
-			if atr { // only 1 @ allowed
+		switch {
+		case c == '@': // only one '@' allowed
+			if !inLocal || (i > 64) { // 1 <= local <= 64
 				return false
-			} else if i < 1 || i > 64 { // Local part must be between 1 and 64 characters long
-				return false
-			} else if !chars.PrevCharIsFn(e, i, chars.IsAlphanumeric) { // Local part cannot end non alphanumeric
-				return false
-			} else if chars.NextCharIs(e, '.', i) || chars.NextCharIs(e, '-', i) { // cant start with a dot/hyphen after @
-				return false
+			} else if chars.NextCharIs(e, '-', i) {
+				return false // no hyphens at domain label start
+			} else if !chars.PrevCharIsFn(e, i, chars.IsAlphanumeric) {
+				return false // local cannot end with non-alphanumeric
 			}
-			atr = true
-			// hyphen rules
-		} else if c == '-' && (chars.PrevCharIs(e, '.', i) || chars.NextCharIs(e, '.', i)) {
-			return false
-		} else if !atr {
-			if !chars.IsAlphanumeric(c) { // no adjacent symbols
+			inLocal, inDomain = false, true
+		case inLocal && localWhitelist(c):
+			if !chars.IsAlphanumeric(c) {
+				if priorNonAlpha { // no adj symbols
+					return false
+				}
+				priorNonAlpha = true
+				continue
+			}
+			priorNonAlpha = false
+		case inDomain && domainWhitelist(c):
+			if c == '.' {
 				if !chars.PrevCharIsFn(e, i, chars.IsAlphanumeric) {
 					return false
-				}
-			}
-		} else if atr {
-			if c == '.' {
-				if chars.NextCharIs(e, '.', i) { // cannot have consecutive dots
+				} else if chars.NextCharIs(e, '-', i) {
 					return false
 				}
-				tldI = i + 1
-				tld = true
+				tldIndex = i
+				if domainLabelLength < 1 || domainLabelLength > 63 {
+					return false
+				}
+				domainLabelLength = 0
+				continue
 			}
+			domainLabelLength += 1
+
+		default:
+			return false
 		}
 	}
 
-	if !atr {
-		return false // minimum 1 @
-	} else if !tld {
-		return false // needs a top level domain
-	} else if tld && (l-tldI < 2) { // tld must be at least 2 chars long
+	if tldIndex == -1 ||
+		(l-1-tldIndex) < 2 ||
+		(l-1-tldIndex) > 63 { // proper tld required
 		return false
-	} else if tld {
-		for i := tldI; i < len(e); i++ {
-			if !chars.IsAlpabetic(e[i]) {
-				return false // tld must be alphabetic
-			}
+	}
+	for i := tldIndex + 1; i < l; i++ {
+		if !chars.IsAlpabetic(e[i]) {
+			return false
 		}
 	}
 	return true

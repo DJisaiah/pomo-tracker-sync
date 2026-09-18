@@ -139,12 +139,13 @@ func TestEmail(t *testing.T) {
 		{"domain with symbols other than hyphen/dots", "a@b.z%m", false},
 
 		{"tld shorter than 2 chars", "a@b.c", false},
+		{"tld shorter than 2 chars with longer local", "aa@b.c", false},
 		{"non-alphabetic tld 1", "a@b.co-p", false},
 		{"non-alphabetic tld 2", "a@b.co1p", false},
 
 		{"valid email -> length of 6", "a@b.co", true},
 		{"valid email -> length of 7", "a@b.com", true},
-		{"valid email -> length of 254", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc.com", true},
+		{"valid email -> length of 254", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc.ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.com", true},
 		{"valid email -> domain label with hyphens", "a@b-c.co", true},
 		{"valid email -> other symbols in local 1", "a.d@b.co", true},
 		{"valid email -> other symbols in local 2", "a_d@b.co", true},
@@ -152,6 +153,10 @@ func TestEmail(t *testing.T) {
 		{"valid email -> other symbols in local 4", "a+d@b.co", true},
 		{"valid email -> other symbols in local 5", "a%d@b.co", true},
 		{"valid email -> consecutive symbols in domain", "a@b--c.com", true},
+		{"valid email -> two separated symbols in local", "a.b+c@domain.com", true},
+		{"valid email -> subdomain with hyphen", "user@sub-domain.example.com", true},
+		{"valid email -> subdomain with number", "user@mail.server2.com", true},
+		{"valid email -> subdomain with hyphen", "user@sub.domain-name.com", true},
 	}
 	v, err := validation.NewValidator()
 	if err != nil {
