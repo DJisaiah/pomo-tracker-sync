@@ -2,9 +2,8 @@ package validation
 
 import (
 	"bufio"
+	_ "embed"
 	"log"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/DJisaiah/pomotracker-sync/internal/chars"
@@ -97,14 +96,11 @@ func (v *Validator) Email(e string) bool {
 	return true
 }
 
+//go:embed data/common-passwords.txt
+var passwords string
+
 func (v *Validator) loadPasswords() error {
-	path := filepath.Join(".", "data", "common-passwords.txt")
-	passwords, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer passwords.Close()
-	sc := bufio.NewScanner(passwords)
+	sc := bufio.NewScanner(strings.NewReader(passwords))
 	for sc.Scan() {
 		v.commonPasswords[sc.Text()] = struct{}{}
 	}
@@ -135,14 +131,11 @@ func (v *Validator) Password(p string) bool {
 
 }
 
+//go:embed data/disallowed-usernames.txt
+var usernames string
+
 func (v *Validator) loadUsernames() error {
-	path := filepath.Join(".", "data", "disallowed-usernames.txt")
-	usernames, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer usernames.Close()
-	sc := bufio.NewScanner(usernames)
+	sc := bufio.NewScanner(strings.NewReader(usernames))
 	for sc.Scan() {
 		v.disallowedUsernames[sc.Text()] = struct{}{}
 	}

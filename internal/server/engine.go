@@ -6,19 +6,23 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
-	"fmt"
+	"errors"
 	"hash"
 	"log"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/DJisaiah/pomotracker-sync/internal/config"
 	"github.com/DJisaiah/pomotracker-sync/internal/db"
 	"github.com/DJisaiah/pomotracker-sync/internal/validation"
 	"github.com/google/uuid"
-	"github.com/joho/godotenv"
 	"golang.org/x/crypto/argon2"
+)
+
+var (
+	ErrNilConfig      = errors.New("config is nil")
+	ErrInvalidAESKey  = errors.New("AES master key must be 32 bytes")
+	ErrInvalidHMACKey = errors.New("HMAC master key must be 32 bytes")
 )
 
 type hmacCipher struct {
@@ -47,74 +51,39 @@ func (hmC *hmacCipher) generate(s string) []byte {
 	return hmC.c.Sum(nil)
 }
 
-func loadEnv() (string, []byte, []byte) {
-	if err := godotenv.Load(); err != nil {
-		log.Fatal("Error loading .env file")
+func LoadServerCrypt(c *config.Config) (*serverActions, error) {
+	if c == nil {
+		log.Println("config is nil")
+		return nil, ErrNilConfig
 	}
-
-	env, err := os.Open(".env")
-	if err != nil {
-		log.Fatal("Error opening .env file")
+	queries, aesMasterKey, hashMasterKey := c.Queries, c.AESMasterKey, c.HMACMasterKey
+	switch {
+	case len(aesMasterKey) != 32:
+		log.Println("AES master key must be 32 bytes")
+		return nil, ErrInvalidAESKey
+	case len(hashMasterKey) != 32:
+		log.Println("HMAC master key must be 32 bytes")
+		return nil, ErrInvalidHMACKey
 	}
-	defer env.Close()
-
-	dbURL, dbExists := os.LookupEnv("DATABASE_URL")
-	if !dbExists {
-		log.Fatal("Error connecting to db")
-	}
-
-	var aesMasterKey, hmacMasterKey []byte
-	aesKEncoded, aesExists := os.LookupEnv("AES_MASTER_KEY")
-	if !aesExists {
-		b := make([]byte, 32)
-		rand.Read(b)
-		aesMasterKey = b
-		env.WriteString(fmt.Sprintf("AES_MASTER_KEY=%s\n", base64.StdEncoding.EncodeToString(b)))
-	} else {
-		aesMasterKey, err = base64.StdEncoding.DecodeString(aesKEncoded)
-		if err != nil {
-			log.Fatal("Error decoding AES secret key")
-		}
-	}
-
-	hmKEncoded, hskExists := os.LookupEnv("HASH_MASTER_KEY")
-	if !hskExists {
-		b := make([]byte, 32)
-		rand.Read(b)
-		hmacMasterKey = b
-		env.WriteString(fmt.Sprintf("HASH_MASTER_KEY=%s\n", base64.StdEncoding.EncodeToString(b)))
-	} else {
-		hmacMasterKey, err = base64.StdEncoding.DecodeString(hmKEncoded)
-		if err != nil {
-			log.Fatal("Error decoding hash secret key")
-		}
-	}
-	return dbURL, aesMasterKey, hmacMasterKey
-}
-
-func StartServer(q *db.Queries) {
-	dbURL, aesMasterKey, hashMasterKey := loadEnv()
 	aesC, err := aes.NewCipher(aesMasterKey)
 	if err != nil {
-		log.Fatal("Error creating AES cipher")
+		log.Println("Error creating AES cipher")
+		return nil, err
 	}
 	aesGCMc, err := cipher.NewGCM(aesC)
 	if err != nil {
-		log.Fatal("Error creating AES-GCM cipher")
-	}
-
-	q, err = db.InitializePool(dbURL)
-	if err != nil {
-		log.Printf("Failed to initialise pool: %v", err)
+		log.Println("Error creating AES-GCM cipher")
+		return nil, err
 	}
 
 	v, err := validation.NewValidator()
 	if err != nil {
-		log.Fatal("Error creating validator")
+		log.Println("Error creating validator")
+		return nil, err
 	}
 
 	sa := serverActions{
-		queries: q,
+		queries: queries,
 		crypt: &serverCrypt{
 			aesMasterKey:  aesMasterKey,
 			hashMasterKey: hashMasterKey,
@@ -126,7 +95,16 @@ func StartServer(q *db.Queries) {
 		},
 		validator: v,
 	}
-	start(&sa)
+	return &sa, nil
+}
+
+func StartServer(q *db.Queries, c *config.Config) error {
+	sa, err := LoadServerCrypt(c)
+	if err != nil {
+		return err
+	}
+	start(sa)
+	return nil
 }
 
 func (sa *serverActions) validateAuthConfig(ac *db.AuthConfig) error {
