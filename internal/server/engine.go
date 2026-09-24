@@ -22,14 +22,6 @@ type serverActions struct {
 	validator *validation.Validator
 }
 
-// s must be normalised first.
-// otherwise could lead to unexpected results in blind index lookups.
-func (hmC *hmacCipher) generate(s string) []byte {
-	hmC.c.Reset()
-	hmC.c.Write([]byte(s))
-	return hmC.c.Sum(nil)
-}
-
 func StartServer(q *db.Queries, c *config.Config) error {
 	sa, err := loadServerCrypt(c)
 	if err != nil {

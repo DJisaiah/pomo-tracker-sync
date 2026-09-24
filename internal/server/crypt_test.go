@@ -114,37 +114,70 @@ func TestGenerateUserCrypt(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
+		ac, err := sa.crypt.generateUserCrypt(tt.authConfig)
+		if (err != nil) && !tt.wantErr {
+			t.Fatalf("generateUserCrypt() error = %v, wantErr = %v", err, tt.wantErr)
+		}
+		if tt.authCrypt != nil {
+			ac.UUID = tt.authCrypt.UUID
+		}
 		t.Run(tt.name, func(t *testing.T) {
-			ac, err := sa.crypt.generateUserCrypt(tt.authConfig)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("generateUserCrypt() error = %v, wantErr = %v", err, tt.wantErr)
-			}
-			decryptedEmail, err := sa.crypt.aesGCM.Open(
-				nil,
-				ac.EmailCipherTextBlob[:12],
-				ac.EmailCipherTextBlob[12:],
-				ac.UUID[:],
-			)
-			if err != nil {
-				t.Fatalf("Failed to decrypt email. aesGCM.Open() error = %v", err)
-			}
+			assertEmailDecrypts(t, sa, ac, tt.wantErr)
 
-			if string(decryptedEmail) != tt.authConfig.Email {
-				t.Errorf("Decrypted email = %s, want %s", decryptedEmail, tt.authConfig.Email)
-			}
+			assertMismatchedUUIDFails(t, sa, ac, tt.authConfig.Email, tt.wantErr)
 
-			if eBI := sa.crypt.generateEmailBlindIndex(tt.authConfig.Email); !slices.Equal(eBI, ac.EmailBlindIndex) {
-				t.Errorf("Blind index matching failed: HMAC verification failed. Got %s, want %s", string(eBI), string(ac.EmailBlindIndex))
-			}
+			assertBlindIndexMatches(t, sa, ac, tt.authConfig.Email)
 
-			if pH, _ := sa.crypt.generatePasswordHash(tt.authConfig.Password); slices.Equal(pH, ac.PasswordHash) {
-				t.Errorf("Password hash with different salt, matches. Got %s, and %s", pH, ac.PasswordHash)
-			}
-
-			if !sa.crypt.verifyPassword(tt.authConfig.Password, ac.PasswordHash, ac.PasswordSalt) {
-				t.Errorf("Password hash with same salt mismatches. verifyPassword() = false, want true")
-			}
-
+			assertPasswordVerifies(t, sa, ac, tt.authConfig.Password)
 		})
+	}
+}
+
+func assertPasswordVerifies(t *testing.T, sa *serverActions, ac *db.AuthCrypt, password string) {
+	if pH, _ := sa.crypt.generatePasswordHash(password); slices.Equal(pH, ac.PasswordHash) {
+		t.Errorf("Password hash with different salt, matches. Got %s, and %s", pH, ac.PasswordHash)
+	}
+
+	if pH, _ := sa.crypt.generatePasswordHash("wrong-password"); slices.Equal(pH, ac.PasswordHash) {
+		t.Errorf("Wrong password with different salt matches.")
+	}
+
+	if !sa.crypt.verifyPassword(password, ac.PasswordHash, ac.PasswordSalt) {
+		t.Errorf("Password hash with same salt mismatches.")
+	}
+
+	if sa.crypt.verifyPassword("wrong-password", ac.PasswordHash, ac.PasswordSalt) {
+		t.Errorf("Wrong password with same salt matches.")
+	}
+}
+
+func assertBlindIndexMatches(t *testing.T, sa *serverActions, ac *db.AuthCrypt, email string) {
+	if eBI := sa.crypt.generateEmailBlindIndex(email); !slices.Equal(eBI, ac.EmailBlindIndex) {
+		t.Errorf("Blind index matching failed: HMAC verification failed. Got %s, want %s", string(eBI), string(ac.EmailBlindIndex))
+	}
+}
+
+func assertMismatchedUUIDFails(t *testing.T, sa *serverActions, ac *db.AuthCrypt, email string, wantErr bool) {
+	decryptedEmailBytes, _ := sa.crypt.aesGCM.Open(
+		nil,
+		ac.EmailCipherTextBlob[:12],
+		ac.EmailCipherTextBlob[12:],
+		ac.UUID[:],
+	)
+	dEmail := string(decryptedEmailBytes)
+	if (dEmail != email) != wantErr {
+		t.Errorf("Decrypted email = %s, want %s", dEmail, email)
+	}
+}
+
+func assertEmailDecrypts(t *testing.T, sa *serverActions, ac *db.AuthCrypt, wantErr bool) {
+	_, err := sa.crypt.aesGCM.Open(
+		nil,
+		ac.EmailCipherTextBlob[:12],
+		ac.EmailCipherTextBlob[12:],
+		ac.UUID[:],
+	)
+	if (err != nil) != wantErr {
+		t.Fatalf("Failed to decrypt email. aesGCM.Open() error = %v", err)
 	}
 }

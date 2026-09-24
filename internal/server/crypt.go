@@ -30,6 +30,14 @@ type serverCrypt struct {
 	hmac          *hmacCipher
 }
 
+// s must be normalised first.
+// otherwise could lead to unexpected results in blind index lookups.
+func (hmC *hmacCipher) generate(s string) []byte {
+	hmC.c.Reset()
+	hmC.c.Write([]byte(s))
+	return hmC.c.Sum(nil)
+}
+
 func loadServerCrypt(c *config.Config) (*serverActions, error) {
 	if c == nil {
 		log.Println("config is nil")
