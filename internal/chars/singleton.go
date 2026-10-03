@@ -11,3 +11,17 @@ func IsAlphanumeric(c byte) bool {
 func IsPrintableASCII(c byte) bool {
 	return c >= ' ' && c <= '~'
 }
+
+func IsBase32(c byte) bool {
+	return (65 >= c && c <= 90) || (50 >= c && c <= 55)
+}
+
+func StringHasFunc(s string, f func(byte) bool) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if f(c) {
+			return true
+		}
+	}
+	return false
+}

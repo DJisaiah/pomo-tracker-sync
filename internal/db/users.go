@@ -6,9 +6,9 @@ import (
 
 var (
 	ErrUserAlreadyExists = errors.New("User already exists")
-	ErrInvalidPassword   = errors.New("#TODO")
-	ErrInvalidUsername   = errors.New("#TODO")
-	ErrInvalidEmail      = errors.New("#TODO")
+	ErrInvalidPassword   = errors.New("Password is invalid")
+	ErrInvalidUsername   = errors.New("Username is invalid")
+	ErrInvalidEmail      = errors.New("Email is invalid")
 	ErrFailedToRegister  = errors.New("Unable to register")
 )
 

@@ -14,13 +14,16 @@ type application struct {
 }
 
 type registerOrLoginResponse struct {
-	refreshToken string
+	RefreshToken string `json:"refreshToken"`
 }
 
 // only accept POST and json on this endpoint
 func (app *application) register(w http.ResponseWriter, r *http.Request) {
-	validRequest := r.Header.Get("Content-Type") == "application/json"
-	if !validRequest {
+	switch {
+	case r.Method != http.MethodPost:
+		http.Error(w, "Invalid Request Type", http.StatusMethodNotAllowed)
+		return
+	case r.Header.Get("Content-Type") != "application/json":
 		http.Error(w, "Invalid Request Type", http.StatusBadRequest)
 		return
 	}
@@ -38,9 +41,12 @@ func (app *application) register(w http.ResponseWriter, r *http.Request) {
 
 	t, err := app.sa.registerUser(&ac)
 	if err != nil {
+		log.Printf("error in user registration: %v", err)
 		switch {
 		case errors.Is(err, db.ErrUserAlreadyExists):
 			http.Error(w, db.ErrUserAlreadyExists.Error(), http.StatusConflict)
+		case errors.Is(err, db.ErrInvalidEmail):
+			http.Error(w, db.ErrInvalidEmail.Error(), http.StatusBadRequest)
 		case errors.Is(err, db.ErrInvalidUsername):
 			http.Error(w, db.ErrInvalidUsername.Error(), http.StatusBadRequest)
 		case errors.Is(err, db.ErrInvalidPassword):
@@ -55,10 +61,10 @@ func (app *application) register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	tr := registerOrLoginResponse{
-		refreshToken: t,
+	tokenResponse := registerOrLoginResponse{
+		RefreshToken: t,
 	}
-	if err := json.NewEncoder(w).Encode(tr); err != nil {
+	if err := json.NewEncoder(w).Encode(tokenResponse); err != nil {
 		log.Printf("unresolved error in token encoding: %v", err)
 		http.Error(w, "something went wrong; cannot serialise token", http.StatusInternalServerError)
 		return

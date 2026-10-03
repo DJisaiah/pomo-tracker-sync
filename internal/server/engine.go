@@ -33,10 +33,13 @@ func StartServer(q *db.Queries, c *config.Config) error {
 
 func (sa *serverActions) validateAuthConfig(ac *db.AuthConfig) error {
 	if !sa.validator.Email(ac.Email) {
+		log.Printf("error validating email: %v", ac.Email)
 		return db.ErrInvalidEmail
 	} else if !sa.validator.Password(ac.Password) {
+		log.Printf("error validating password: %v", ac.Password)
 		return db.ErrInvalidPassword
 	} else if !sa.validator.Username(ac.Username) {
+		log.Printf("error validating username: %v", ac.Username)
 		return db.ErrInvalidUsername
 	}
 	return nil
@@ -45,6 +48,7 @@ func (sa *serverActions) validateAuthConfig(ac *db.AuthConfig) error {
 func (sa *serverActions) registerUser(ac *db.AuthConfig) (string, error) {
 	err := sa.validateAuthConfig(ac)
 	if err != nil {
+		log.Printf("error validating auth config: %v", err)
 		return "", err
 	}
 
@@ -52,6 +56,7 @@ func (sa *serverActions) registerUser(ac *db.AuthConfig) (string, error) {
 
 	lc, err := sa.crypt.generateUserCrypt(ac)
 	if err != nil {
+		log.Printf("error generating user crypt: %v", err)
 		return "", err
 	}
 
