@@ -16,13 +16,17 @@ var (
 	ErrInvalidHMACKey = errors.New("HMAC master key must be 32 bytes")
 )
 
+type UserStore interface {
+	AddUser(u db.User) error
+}
+
 type serverActions struct {
-	queries   *db.Queries
+	queries   UserStore
 	crypt     *serverCrypt
 	validator *validation.Validator
 }
 
-func StartServer(q *db.Queries, c *config.Config) error {
+func StartServer(q UserStore, c *config.Config) error {
 	sa, err := loadServerCrypt(c)
 	if err != nil {
 		return err

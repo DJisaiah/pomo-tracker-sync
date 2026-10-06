@@ -14,6 +14,14 @@ import (
 	"github.com/DJisaiah/pomotracker-sync/internal/db"
 )
 
+type stubUserStore struct {
+	errResult error
+}
+
+func (s *stubUserStore) AddUser(u db.User) error {
+	return s.errResult
+}
+
 func TestRegister(t *testing.T) {
 
 	tests := []struct {
@@ -23,6 +31,7 @@ func TestRegister(t *testing.T) {
 		payload          string
 		expectedStatus   int
 		expectedResponse string
+		stubErr          error
 	}{
 		{
 			name:        "valid request 1",
@@ -165,6 +174,36 @@ func TestRegister(t *testing.T) {
 			expectedStatus:   http.StatusBadRequest,
 			expectedResponse: ErrInvalidPayload.Error(),
 		},
+		{
+			name:        "valid payload -> fail to register",
+			requestType: "POST",
+			header:      http.Header{"Content-Type": {"application/json"}},
+			payload: `{
+				"Email":      "test@example.com",
+				"Username":   "testuser",
+				"Password":   "agoodpassword12",
+				"Student":    false,
+				"LeftHanded": false
+			}`,
+			expectedStatus:   http.StatusInternalServerError,
+			expectedResponse: db.ErrFailedToRegister.Error(),
+			stubErr:          db.ErrFailedToRegister,
+		},
+		{
+			name:        "valid payload -> user already exists",
+			requestType: "POST",
+			header:      http.Header{"Content-Type": {"application/json"}},
+			payload: `{
+				"Email":      "test@example.com",
+				"Username":   "testuser",
+				"Password":   "agoodpassword12",
+				"Student":    false,
+				"LeftHanded": false
+			}`,
+			expectedStatus:   http.StatusConflict,
+			expectedResponse: db.ErrUserAlreadyExists.Error(),
+			stubErr:          db.ErrUserAlreadyExists,
+		},
 	}
 
 	c := &config.Config{
@@ -181,6 +220,9 @@ func TestRegister(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.stubErr != nil {
+				sa.queries = &stubUserStore{errResult: tt.stubErr}
+			}
 			req := httptest.NewRequest(tt.requestType, "/", strings.NewReader(tt.payload))
 			req.Header = tt.header
 			w := httptest.NewRecorder()
