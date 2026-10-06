@@ -11,16 +11,18 @@ import (
 
 	"github.com/DJisaiah/pomotracker-sync/internal/chars"
 	"github.com/DJisaiah/pomotracker-sync/internal/config"
+	"github.com/DJisaiah/pomotracker-sync/internal/db"
 )
 
 func TestRegister(t *testing.T) {
 
 	tests := []struct {
-		name           string
-		requestType    string
-		header         http.Header
-		payload        string
-		expectedStatus int
+		name             string
+		requestType      string
+		header           http.Header
+		payload          string
+		expectedStatus   int
+		expectedResponse string
 	}{
 		{
 			name:        "valid request 1",
@@ -46,7 +48,8 @@ func TestRegister(t *testing.T) {
 				"Student": false,
 				"LeftHanded": false
 			}`,
-			expectedStatus: http.StatusBadRequest,
+			expectedStatus:   http.StatusBadRequest,
+			expectedResponse: ErrInvalidRequestType.Error(),
 		},
 		{
 			name:        "invalid request -> wrong request type",
@@ -59,14 +62,16 @@ func TestRegister(t *testing.T) {
 				"Student": false,
 				"LeftHanded": false
 			}`,
-			expectedStatus: http.StatusMethodNotAllowed,
+			expectedStatus:   http.StatusMethodNotAllowed,
+			expectedResponse: ErrInvalidRequestType.Error(),
 		},
 		{
-			name:           "invalid payload -> no payload",
-			requestType:    "POST",
-			header:         http.Header{"Content-Type": {"application/json"}},
-			payload:        "",
-			expectedStatus: http.StatusBadRequest,
+			name:             "invalid payload -> no payload",
+			requestType:      "POST",
+			header:           http.Header{"Content-Type": {"application/json"}},
+			payload:          "",
+			expectedStatus:   http.StatusBadRequest,
+			expectedResponse: ErrInvalidPayload.Error(),
 		},
 		{
 			name:        "invalid payload -> bad password",
@@ -77,9 +82,10 @@ func TestRegister(t *testing.T) {
 				"Username":   "testuser",
 				"Password":   "password1234567",
 				"Student":    false,
-				"LeftHanded": false,
+				"LeftHanded": false
 			}`,
-			expectedStatus: http.StatusBadRequest,
+			expectedStatus:   http.StatusBadRequest,
+			expectedResponse: db.ErrInvalidPassword.Error(),
 		},
 		{
 			name:        "invalid payload -> bad email",
@@ -90,9 +96,10 @@ func TestRegister(t *testing.T) {
 				"Username":   "testuser",
 				"Password":   "agoodpassword12",
 				"Student":    false,
-				"LeftHanded": false,
+				"LeftHanded": false
 			}`,
-			expectedStatus: http.StatusBadRequest,
+			expectedStatus:   http.StatusBadRequest,
+			expectedResponse: db.ErrInvalidEmail.Error(),
 		},
 		{
 			name:        "invalid payload -> bad username",
@@ -103,9 +110,10 @@ func TestRegister(t *testing.T) {
 				"Username":   "admin",
 				"Password":   "agoodpassword12",
 				"Student":    false,
-				"LeftHanded": false,
+				"LeftHanded": false
 			}`,
-			expectedStatus: http.StatusBadRequest,
+			expectedStatus:   http.StatusBadRequest,
+			expectedResponse: db.ErrInvalidUsername.Error(),
 		},
 		{
 			name:        "invalid payload -> missing fields",
@@ -113,10 +121,10 @@ func TestRegister(t *testing.T) {
 			header:      http.Header{"Content-Type": {"application/json"}},
 			payload: `{
 				"Email":    "test@example.com",
-				"Username": "admin",
-				"Password": "agoodpassword12",
+				"Username": "testuser"
 			}`,
-			expectedStatus: http.StatusBadRequest,
+			expectedStatus:   http.StatusBadRequest,
+			expectedResponse: ErrInvalidPayload.Error(),
 		},
 		{
 			name:        "invalid payload -> extra fields",
@@ -128,9 +136,34 @@ func TestRegister(t *testing.T) {
 				"Password":   "agoodpassword12",
 				"Student":    false,
 				"LeftHanded": false,
-				"ExtraField": "extra",
+				"ExtraField": "extra"
 			}`,
-			expectedStatus: http.StatusBadRequest,
+			expectedStatus:   http.StatusBadRequest,
+			expectedResponse: ErrInvalidPayload.Error(),
+		},
+		{
+			name:             "invalid request -> completely missing headers",
+			requestType:      "POST",
+			header:           http.Header{},
+			payload:          `{"Email": "test@example.com", "Username": "testuser"}`,
+			expectedStatus:   http.StatusBadRequest,
+			expectedResponse: ErrInvalidRequestType.Error(),
+		},
+		{
+			name:             "invalid payload -> empty json object",
+			requestType:      "POST",
+			header:           http.Header{"Content-Type": {"application/json"}},
+			payload:          `{}`,
+			expectedStatus:   http.StatusBadRequest,
+			expectedResponse: ErrInvalidPayload.Error(),
+		},
+		{
+			name:             "invalid payload -> malformed json",
+			requestType:      "POST",
+			header:           http.Header{"Content-Type": {"application/json"}},
+			payload:          `{"Email":`,
+			expectedStatus:   http.StatusBadRequest,
+			expectedResponse: ErrInvalidPayload.Error(),
 		},
 	}
 
@@ -168,8 +201,8 @@ func TestRegister(t *testing.T) {
 			if resp.StatusCode == http.StatusOK {
 				if resp.Header.Get("Content-Type") != "application/json" {
 					t.Errorf("expected content type application/json, got %s", resp.Header.Get("Content-Type"))
+					return
 				}
-
 				var tokenResponse map[string]any
 				err = json.Unmarshal(b, &tokenResponse)
 				if err != nil {
@@ -196,8 +229,11 @@ func TestRegister(t *testing.T) {
 				if len(tokenResponse) > 1 {
 					t.Errorf("expected 1 obj in token response, got %d", len(tokenResponse))
 				}
+				return
 			}
-
+			if strings.TrimSpace(string(b)) != tt.expectedResponse {
+				t.Errorf("expected response body %s, got %s", tt.expectedResponse, b)
+			}
 		})
 	}
 }

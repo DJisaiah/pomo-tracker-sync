@@ -9,6 +9,11 @@ import (
 	"github.com/DJisaiah/pomotracker-sync/internal/db"
 )
 
+var (
+	ErrInvalidRequestType = errors.New("Invalid Request Type")
+	ErrInvalidPayload     = errors.New("Invalid Payload")
+)
+
 type application struct {
 	sa *serverActions
 }
@@ -17,14 +22,29 @@ type registerOrLoginResponse struct {
 	RefreshToken string `json:"refreshToken"`
 }
 
+func missingFields(ac *db.AuthConfig) bool {
+	// we accept booleans as false by default
+	// to avoid the headache of *bool
+	switch {
+	case ac.Email == "":
+		return true
+	case ac.Username == "":
+		return true
+	case ac.Password == "":
+		return true
+	default:
+		return false
+	}
+}
+
 // only accept POST and json on this endpoint
 func (app *application) register(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method != http.MethodPost:
-		http.Error(w, "Invalid Request Type", http.StatusMethodNotAllowed)
+		http.Error(w, ErrInvalidRequestType.Error(), http.StatusMethodNotAllowed)
 		return
 	case r.Header.Get("Content-Type") != "application/json":
-		http.Error(w, "Invalid Request Type", http.StatusBadRequest)
+		http.Error(w, ErrInvalidRequestType.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -34,8 +54,10 @@ func (app *application) register(w http.ResponseWriter, r *http.Request) {
 	jd.DisallowUnknownFields()
 	var ac db.AuthConfig
 	// if payload doesnt match struct members dont accept
-	if err := jd.Decode(&ac); err != nil {
-		http.Error(w, "Invalid Payload", http.StatusBadRequest)
+	if err := jd.Decode(&ac); (err != nil) || missingFields(&ac) {
+		log.Print("failed to decode payload in handler")
+		log.Printf("error: %v", err != nil)
+		http.Error(w, ErrInvalidPayload.Error(), http.StatusBadRequest)
 		return
 	}
 
