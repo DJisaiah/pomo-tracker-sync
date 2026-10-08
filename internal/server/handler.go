@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 
@@ -12,6 +13,7 @@ import (
 var (
 	ErrInvalidRequestType = errors.New("Invalid Request Type")
 	ErrInvalidPayload     = errors.New("Invalid Payload")
+	ErrServerError        = errors.New("Internal server error occured. Please try again later.")
 )
 
 type application struct {
@@ -22,46 +24,72 @@ type registerOrLoginResponse struct {
 	RefreshToken string `json:"refreshToken"`
 }
 
-func missingFields(ac *db.AuthConfig) bool {
-	// we accept booleans as false by default
-	// to avoid the headache of *bool
+func validRequest(r *http.Request, method string, contentType string) (error, int) {
 	switch {
-	case ac.Email == "":
-		return true
-	case ac.Username == "":
-		return true
-	case ac.Password == "":
-		return true
+	case r.Method != method:
+		return ErrInvalidRequestType, http.StatusMethodNotAllowed
+	case r.Header.Get("Content-Type") != contentType:
+		return ErrInvalidRequestType, http.StatusBadRequest
 	default:
-		return false
+		return nil, 0
 	}
 }
 
-// only accept POST and json on this endpoint
-func (app *application) register(w http.ResponseWriter, r *http.Request) {
-	switch {
-	case r.Method != http.MethodPost:
-		http.Error(w, ErrInvalidRequestType.Error(), http.StatusMethodNotAllowed)
-		return
-	case r.Header.Get("Content-Type") != "application/json":
-		http.Error(w, ErrInvalidRequestType.Error(), http.StatusBadRequest)
+func (app *application) decodeAndValidateJSON(b io.ReadCloser, v any) error {
+	// decode and validate json into structs
+	defer b.Close()
+	jd := json.NewDecoder(b)
+	jd.DisallowUnknownFields()
+	if err := jd.Decode(v); err != nil {
+		log.Printf("failed to decode payload in handler: %v\n", err)
+		return ErrInvalidPayload
+	}
+	if err := app.sa.validator.Struct(v); err != nil {
+		log.Printf("failed to validate payload in handler: %v\n", err)
+		return err
+	}
+	return nil
+}
+
+func (app *application) login(w http.ResponseWriter, r *http.Request) {
+	if err, status := validRequest(r, http.MethodPost, "application/json"); err != nil {
+		http.Error(w, err.Error(), status)
 		return
 	}
-
-	// serveHTTP does this, we dont actually need to
-	defer r.Body.Close()
-	jd := json.NewDecoder(r.Body)
-	jd.DisallowUnknownFields()
-	var ac db.AuthConfig
-	// if payload doesnt match struct members dont accept
-	if err := jd.Decode(&ac); (err != nil) || missingFields(&ac) {
-		log.Print("failed to decode payload in handler")
-		log.Printf("error: %v", err != nil)
+	var lc db.LoginConfig
+	err := app.decodeAndValidateJSON(r.Body, &lc)
+	if err != nil {
 		http.Error(w, ErrInvalidPayload.Error(), http.StatusBadRequest)
 		return
 	}
 
-	t, err := app.sa.registerUser(&ac)
+	// actually move this logic into engine.
+	// just send the decoded to engine and return whatever necessary response here
+	// speed this up by checking if the details themselves are even reasonable before
+	// checking db
+	if lc.Email == "" {
+		ac, err := app.sa.queries.FetchCrypt(lc)
+		if err != nil {
+			log.Printf("error fetching auth crypt: %v", err)
+			http.Error(w, ErrServerError.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+}
+
+func (app *application) register(w http.ResponseWriter, r *http.Request) {
+	if err, status := validRequest(r, http.MethodPost, "application/json"); err != nil {
+		http.Error(w, err.Error(), status)
+		return
+	}
+	var rc db.RegisterConfig
+	err := app.decodeAndValidateJSON(r.Body, &rc)
+	if err != nil {
+		http.Error(w, ErrInvalidPayload.Error(), http.StatusBadRequest)
+		return
+	}
+
+	t, err := app.sa.registerUser(&rc)
 	if err != nil {
 		log.Printf("error in user registration: %v", err)
 		switch {
@@ -96,7 +124,9 @@ func (app *application) register(w http.ResponseWriter, r *http.Request) {
 func start(sa *serverActions) {
 	app := application{sa: sa}
 	mux := http.NewServeMux()
+	// rewrite this to automate
 	mux.HandleFunc("POST /register", app.register)
+	mux.HandleFunc("POST /login", app.login)
 
 	srv := &http.Server{
 		Addr:    ":8080",

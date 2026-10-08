@@ -72,13 +72,13 @@ func TestGenerateUserCrypt(t *testing.T) {
 	}
 	tests := []struct {
 		name       string
-		authConfig *db.AuthConfig
+		authConfig *db.RegisterConfig
 		authCrypt  *db.AuthCrypt
 		wantErr    bool
 	}{
 		{
 			name: "valid authconfig 1",
-			authConfig: &db.AuthConfig{
+			authConfig: &db.RegisterConfig{
 				Email:      "test@example.com",
 				Username:   "test",
 				Password:   "password",
@@ -89,7 +89,7 @@ func TestGenerateUserCrypt(t *testing.T) {
 		},
 		{
 			name: "valid authconfig 2",
-			authConfig: &db.AuthConfig{
+			authConfig: &db.RegisterConfig{
 				Email:      "jane@doe.com",
 				Username:   "janedoe",
 				Password:   "password2",
@@ -100,7 +100,7 @@ func TestGenerateUserCrypt(t *testing.T) {
 		},
 		{
 			name: "invalid authconfig -> mismatching uuid",
-			authConfig: &db.AuthConfig{
+			authConfig: &db.RegisterConfig{
 				Email:      "test@example.com",
 				Username:   "test",
 				Password:   "password",

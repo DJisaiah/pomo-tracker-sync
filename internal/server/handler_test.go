@@ -18,9 +18,11 @@ type stubUserStore struct {
 	errResult error
 }
 
-func (s *stubUserStore) AddUser(u db.User) error {
+func (s *stubUserStore) AddUser(u db.NewUser) error {
 	return s.errResult
 }
+
+func (s *stubUserStore) FetchCrypt(lc db.LoginConfig) (db.AuthCrypt, error)
 
 func TestRegister(t *testing.T) {
 
@@ -38,11 +40,11 @@ func TestRegister(t *testing.T) {
 			requestType: "POST",
 			header:      http.Header{"Content-Type": {"application/json"}},
 			payload: `{
-				"Email":      "test@example.com",
-				"Username":   "testuser",
-				"Password":   "agoodpassword12",
-				"Student":    false,
-				"LeftHanded": false
+				"email":      "test@example.com",
+				"username":   "testuser",
+				"password":   "agoodpassword12",
+				"student":    false,
+				"leftHanded": false
 			}`,
 			expectedStatus: http.StatusOK,
 		},
@@ -51,11 +53,11 @@ func TestRegister(t *testing.T) {
 			requestType: "POST",
 			header:      http.Header{"Content-Type": {"application/xml"}},
 			payload: `{
-				"Email": "test@example.com",
-				"Username": "testuser",
-				"Password": "agoodpassword12",
-				"Student": false,
-				"LeftHanded": false
+				"email": "test@example.com",
+				"username": "testuser",
+				"password": "agoodpassword12",
+				"student": false,
+				"leftHanded": false
 			}`,
 			expectedStatus:   http.StatusBadRequest,
 			expectedResponse: ErrInvalidRequestType.Error(),
@@ -65,11 +67,11 @@ func TestRegister(t *testing.T) {
 			requestType: "GET",
 			header:      http.Header{"Content-Type": {"application/json"}},
 			payload: `{
-				"Email": "test@example.com",
-				"Username": "testuser",
-				"Password": "agoodpassword12",
-				"Student": false,
-				"LeftHanded": false
+				"email": "test@example.com",
+				"username": "testuser",
+				"password": "agoodpassword12",
+				"student": false,
+				"leftHanded": false
 			}`,
 			expectedStatus:   http.StatusMethodNotAllowed,
 			expectedResponse: ErrInvalidRequestType.Error(),
@@ -87,11 +89,11 @@ func TestRegister(t *testing.T) {
 			requestType: "POST",
 			header:      http.Header{"Content-Type": {"application/json"}},
 			payload: `{
-				"Email":      "test@example.com",
-				"Username":   "testuser",
-				"Password":   "password1234567",
-				"Student":    false,
-				"LeftHanded": false
+				"email":      "test@example.com",
+				"username":   "testuser",
+				"password":   "password1234567",
+				"student":    false,
+				"leftHanded": false
 			}`,
 			expectedStatus:   http.StatusBadRequest,
 			expectedResponse: db.ErrInvalidPassword.Error(),
@@ -101,11 +103,11 @@ func TestRegister(t *testing.T) {
 			requestType: "POST",
 			header:      http.Header{"Content-Type": {"application/json"}},
 			payload: `{
-				"Email":      "testexample.com",
-				"Username":   "testuser",
-				"Password":   "agoodpassword12",
-				"Student":    false,
-				"LeftHanded": false
+				"email":      "testexample.com",
+				"username":   "testuser",
+				"password":   "agoodpassword12",
+				"student":    false,
+				"leftHanded": false
 			}`,
 			expectedStatus:   http.StatusBadRequest,
 			expectedResponse: db.ErrInvalidEmail.Error(),
@@ -115,11 +117,11 @@ func TestRegister(t *testing.T) {
 			requestType: "POST",
 			header:      http.Header{"Content-Type": {"application/json"}},
 			payload: `{
-				"Email":      "test@example.com",
-				"Username":   "admin",
-				"Password":   "agoodpassword12",
-				"Student":    false,
-				"LeftHanded": false
+				"email":      "test@example.com",
+				"username":   "admin",
+				"password":   "agoodpassword12",
+				"student":    false,
+				"leftHanded": false
 			}`,
 			expectedStatus:   http.StatusBadRequest,
 			expectedResponse: db.ErrInvalidUsername.Error(),
@@ -129,8 +131,8 @@ func TestRegister(t *testing.T) {
 			requestType: "POST",
 			header:      http.Header{"Content-Type": {"application/json"}},
 			payload: `{
-				"Email":    "test@example.com",
-				"Username": "testuser"
+				"email":    "test@example.com",
+				"username": "testuser"
 			}`,
 			expectedStatus:   http.StatusBadRequest,
 			expectedResponse: ErrInvalidPayload.Error(),
@@ -140,12 +142,12 @@ func TestRegister(t *testing.T) {
 			requestType: "POST",
 			header:      http.Header{"Content-Type": {"application/json"}},
 			payload: `{
-				"Email":      "test@example.com",
-				"Username":   "admin",
-				"Password":   "agoodpassword12",
-				"Student":    false,
-				"LeftHanded": false,
-				"ExtraField": "extra"
+				"email":      "test@example.com",
+				"username":   "admin",
+				"password":   "agoodpassword12",
+				"student":    false,
+				"leftHanded": false,
+				"extraField": "extra"
 			}`,
 			expectedStatus:   http.StatusBadRequest,
 			expectedResponse: ErrInvalidPayload.Error(),
@@ -179,11 +181,11 @@ func TestRegister(t *testing.T) {
 			requestType: "POST",
 			header:      http.Header{"Content-Type": {"application/json"}},
 			payload: `{
-				"Email":      "test@example.com",
-				"Username":   "testuser",
-				"Password":   "agoodpassword12",
-				"Student":    false,
-				"LeftHanded": false
+				"email":      "test@example.com",
+				"username":   "testuser",
+				"password":   "agoodpassword12",
+				"student":    false,
+				"leftHanded": false
 			}`,
 			expectedStatus:   http.StatusInternalServerError,
 			expectedResponse: db.ErrFailedToRegister.Error(),
@@ -194,11 +196,11 @@ func TestRegister(t *testing.T) {
 			requestType: "POST",
 			header:      http.Header{"Content-Type": {"application/json"}},
 			payload: `{
-				"Email":      "test@example.com",
-				"Username":   "testuser",
-				"Password":   "agoodpassword12",
-				"Student":    false,
-				"LeftHanded": false
+				"email":      "test@example.com",
+				"username":   "testuser",
+				"password":   "agoodpassword12",
+				"student":    false,
+				"leftHanded": false
 			}`,
 			expectedStatus:   http.StatusConflict,
 			expectedResponse: db.ErrUserAlreadyExists.Error(),
@@ -216,7 +218,9 @@ func TestRegister(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to load server crypt: %v", err)
 	}
-	a := application{sa}
+	a := application{
+		sa: sa,
+	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

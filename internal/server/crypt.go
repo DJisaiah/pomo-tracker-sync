@@ -118,7 +118,7 @@ func (sc *serverCrypt) generateToken() (string, time.Time) {
 	return rand.Text(), time.Now().UTC().AddDate(0, 0, 14)
 }
 
-func (sc *serverCrypt) generateUserCrypt(ac *db.AuthConfig) (*db.AuthCrypt, error) {
+func (sc *serverCrypt) generateUserCrypt(ac *db.RegisterConfig) (*db.AuthCrypt, error) {
 	uuid, err := uuid.NewV7()
 	if err != nil {
 		log.Printf("Failed to generate UUID: %v", err)

@@ -19,11 +19,9 @@ func (q *Queries) exists(u string) error {
 	return nil
 }
 
-func Login() error {
-	return nil
-}
+func (q *Queries) FetchCrypt(lc LoginConfig) (AuthCrypt, error)
 
-func (q *Queries) AddUser(u User) error {
+func (q *Queries) AddUser(u NewUser) error {
 	// qry := `
 	// 	INSERT INTO users(email_bid, encrypted_email, username, encrypted_password, salt, student, left_handed)
 	// 	VALUES ($1, $2, $3, $4, $5, $6, $7)

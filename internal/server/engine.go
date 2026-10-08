@@ -17,7 +17,8 @@ var (
 )
 
 type UserStore interface {
-	AddUser(u db.User) error
+	AddUser(u db.NewUser) error
+	FetchCrypt(lc db.LoginConfig) (db.AuthCrypt, error)
 }
 
 type serverActions struct {
@@ -35,7 +36,7 @@ func StartServer(q UserStore, c *config.Config) error {
 	return nil
 }
 
-func (sa *serverActions) validateAuthConfig(ac *db.AuthConfig) error {
+func (sa *serverActions) validateRegisterConfig(ac *db.RegisterConfig) error {
 	if !sa.validator.Email(ac.Email) {
 		log.Printf("error validating email: %v", ac.Email)
 		return db.ErrInvalidEmail
@@ -49,8 +50,8 @@ func (sa *serverActions) validateAuthConfig(ac *db.AuthConfig) error {
 	return nil
 }
 
-func (sa *serverActions) registerUser(ac *db.AuthConfig) (string, error) {
-	err := sa.validateAuthConfig(ac)
+func (sa *serverActions) registerUser(ac *db.RegisterConfig) (string, error) {
+	err := sa.validateRegisterConfig(ac)
 	if err != nil {
 		log.Printf("error validating auth config: %v", err)
 		return "", err
@@ -64,7 +65,7 @@ func (sa *serverActions) registerUser(ac *db.AuthConfig) (string, error) {
 		return "", err
 	}
 
-	usr := db.User{
+	usr := db.NewUser{
 		LoginDetails: ac,
 		LoginCrypt:   lc,
 	}
