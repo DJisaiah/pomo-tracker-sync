@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log"
@@ -18,11 +19,27 @@ type stubUserStore struct {
 	errResult error
 }
 
-func (s *stubUserStore) AddUser(u db.NewUser) error {
+func (s *stubUserStore) AddUser(u *db.AuthCrypt) error {
 	return s.errResult
 }
 
-func (s *stubUserStore) FetchCrypt(lc db.LoginConfig) (db.AuthCrypt, error)
+func (s *stubUserStore) FetchCryptByEmail(lc *db.LoginConfig, eBI []byte) (db.AuthCrypt, error) {
+	//todo
+	return db.AuthCrypt{}, nil
+}
+
+func (s *stubUserStore) UpdateRefreshToken(ac *db.AuthCrypt, as *db.AuthSuccess) error {
+	return nil //todo
+}
+
+func (s *stubUserStore) FetchCryptByUsername(lc *db.LoginConfig) (db.AuthCrypt, error) {
+	// todo
+	return db.AuthCrypt{}, nil
+}
+
+func (q *stubUserStore) FetchCryptByRefreshToken(rt []byte) (db.AuthCrypt, error) {
+	return db.AuthCrypt{}, nil
+}
 
 func TestRegister(t *testing.T) {
 
@@ -265,9 +282,12 @@ func TestRegister(t *testing.T) {
 				} else {
 					t.Fatalf("refresh token not found in response")
 				}
-
-				if len(refreshToken) != 26 {
-					t.Errorf("expected refresh token length 26, got %d", len(refreshToken))
+				// 32 byte slice encoded to b64 becomes 44 characters
+				if dL, err := base64.StdEncoding.DecodeString(refreshToken); len(dL) != 32 {
+					if err != nil {
+						t.Fatalf("failed to decode refresh token: %v", err)
+					}
+					t.Errorf("expected refresh token length 32, got %d", dL)
 				}
 				if !chars.StringHasFunc(refreshToken, chars.IsBase32) {
 					t.Errorf("failed to decode refresh token (likely not base32 or else): %v", err)

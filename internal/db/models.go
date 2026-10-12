@@ -6,11 +6,6 @@ import (
 	"github.com/google/uuid"
 )
 
-type NewUser struct {
-	LoginDetails *RegisterConfig
-	LoginCrypt   *AuthCrypt
-}
-
 type RegisterConfig struct {
 	Email      string `json:"email" validate:"required"`
 	Username   string `json:"username" validate:"required"`
@@ -33,6 +28,16 @@ type AuthCrypt struct {
 	EmailCipherTextBlob []byte
 	PasswordHash        []byte
 	PasswordSalt        []byte
-	RefreshToken        string
-	ValidTil            time.Time
+	Student             bool
+	LeftHanded          bool
+	HashedRefreshToken  [32]byte
+	RefreshToken        [32]byte
+	TokenValidTil       time.Time
+}
+
+type AuthSuccess struct {
+	HashedToken   [32]byte
+	Token         [32]byte
+	NewToken      bool
+	TokenValidTil time.Time
 }

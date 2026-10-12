@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/DJisaiah/pomotracker-sync/internal/db"
 )
@@ -21,17 +22,25 @@ type application struct {
 }
 
 type registerOrLoginResponse struct {
-	RefreshToken string `json:"refreshToken"`
+	RefreshToken []byte `json:"refreshToken"`
 }
 
-func validRequest(r *http.Request, method string, contentType string) (error, int) {
+type accessTokenPayload struct {
+	// encoding/json makes auto encodes/decodes byte slices to/from base64
+	// it does NOT do that for byte arrays; it rather makes them int arrays
+	AccessToken []byte    `json:"accessToken"`
+	Signature   []byte    `json:"signature"`
+	ExpiresAt   time.Time `json:"expiresAt"`
+}
+
+func validRequest(r *http.Request, method string, contentType string) (int, error) {
 	switch {
 	case r.Method != method:
-		return ErrInvalidRequestType, http.StatusMethodNotAllowed
+		return http.StatusMethodNotAllowed, ErrInvalidRequestType
 	case r.Header.Get("Content-Type") != contentType:
-		return ErrInvalidRequestType, http.StatusBadRequest
+		return http.StatusBadRequest, ErrInvalidRequestType
 	default:
-		return nil, 0
+		return 0, nil
 	}
 }
 
@@ -52,7 +61,7 @@ func (app *application) decodeAndValidateJSON(b io.ReadCloser, v any) error {
 }
 
 func (app *application) login(w http.ResponseWriter, r *http.Request) {
-	if err, status := validRequest(r, http.MethodPost, "application/json"); err != nil {
+	if status, err := validRequest(r, http.MethodPost, "application/json"); err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
@@ -63,22 +72,40 @@ func (app *application) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// actually move this logic into engine.
-	// just send the decoded to engine and return whatever necessary response here
-	// speed this up by checking if the details themselves are even reasonable before
-	// checking db
-	if lc.Email == "" {
-		ac, err := app.sa.queries.FetchCrypt(lc)
-		if err != nil {
-			log.Printf("error fetching auth crypt: %v", err)
+	tkn, err := app.sa.loginUser(&lc)
+	if err != nil {
+		log.Printf("error in user login: %v", err)
+		switch {
+		case errors.Is(err, db.ErrInvalidLogin):
+			http.Error(w, db.ErrInvalidLogin.Error(), http.StatusUnauthorized)
+		case errors.Is(err, db.ErrInvalidEmail):
+			http.Error(w, db.ErrInvalidEmail.Error(), http.StatusBadRequest)
+		case errors.Is(err, db.ErrInvalidUsername):
+			http.Error(w, db.ErrInvalidUsername.Error(), http.StatusBadRequest)
+		case errors.Is(err, db.ErrInvalidPassword):
+			http.Error(w, db.ErrInvalidPassword.Error(), http.StatusBadRequest)
+		case errors.Is(err, db.ErrFailedToLogin):
+			http.Error(w, db.ErrFailedToLogin.Error(), http.StatusInternalServerError)
+		default:
+			log.Printf("unresolved error in user login: %v", err)
 			http.Error(w, ErrServerError.Error(), http.StatusInternalServerError)
-			return
 		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	tokenResponse := registerOrLoginResponse{
+		RefreshToken: tkn[:],
+	}
+	if err := json.NewEncoder(w).Encode(tokenResponse); err != nil {
+		log.Printf("unresolved error in token encoding for login: %v", err)
+		http.Error(w, "something went wrong; cannot serialise token", http.StatusInternalServerError)
+		return
 	}
 }
 
 func (app *application) register(w http.ResponseWriter, r *http.Request) {
-	if err, status := validRequest(r, http.MethodPost, "application/json"); err != nil {
+	if status, err := validRequest(r, http.MethodPost, "application/json"); err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
@@ -105,17 +132,56 @@ func (app *application) register(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, db.ErrFailedToRegister.Error(), http.StatusInternalServerError)
 		default:
 			log.Printf("unresolved error in user registration: %v", err)
-			http.Error(w, "Internal server error occured. Please try again later.", http.StatusInternalServerError)
+			http.Error(w, ErrServerError.Error(), http.StatusInternalServerError)
 		}
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	tokenResponse := registerOrLoginResponse{
-		RefreshToken: t,
+		RefreshToken: t[:],
 	}
 	if err := json.NewEncoder(w).Encode(tokenResponse); err != nil {
-		log.Printf("unresolved error in token encoding: %v", err)
+		log.Printf("unresolved error in token encoding for registration: %v", err)
+		http.Error(w, "something went wrong; cannot serialise token", http.StatusInternalServerError)
+		return
+	}
+}
+
+func (app *application) request(w http.ResponseWriter, r *http.Request) {
+	if status, err := validRequest(r, http.MethodPost, "application/json"); err != nil {
+		http.Error(w, err.Error(), status)
+		return
+	}
+	var rt registerOrLoginResponse
+	err := app.decodeAndValidateJSON(r.Body, &rt)
+	if err != nil {
+		http.Error(w, ErrInvalidPayload.Error(), http.StatusBadRequest)
+		return
+	}
+
+	atp, err := app.sa.requestAccessToken(&rt)
+	if err != nil {
+		log.Printf("error in user registration: %v", err)
+		switch {
+		case errors.Is(err, db.ErrInvalidEmail):
+			http.Error(w, db.ErrInvalidEmail.Error(), http.StatusBadRequest)
+		case errors.Is(err, db.ErrInvalidUsername):
+			http.Error(w, db.ErrInvalidUsername.Error(), http.StatusBadRequest)
+		case errors.Is(err, db.ErrInvalidPassword):
+			http.Error(w, db.ErrInvalidPassword.Error(), http.StatusBadRequest)
+		case errors.Is(err, ErrFailedToFetchAccessToken):
+			http.Error(w, db.ErrFailedToRegister.Error(), http.StatusInternalServerError)
+		default:
+			log.Printf("unresolved error in token fetching: %v", err)
+			http.Error(w, ErrServerError.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(atp); err != nil {
+		log.Printf("unresolved error in token encoding for access token request: %v", err)
 		http.Error(w, "something went wrong; cannot serialise token", http.StatusInternalServerError)
 		return
 	}
@@ -127,6 +193,7 @@ func start(sa *serverActions) {
 	// rewrite this to automate
 	mux.HandleFunc("POST /register", app.register)
 	mux.HandleFunc("POST /login", app.login)
+	mux.HandleFunc("POST /request", app.request)
 
 	srv := &http.Server{
 		Addr:    ":8080",

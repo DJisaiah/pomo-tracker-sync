@@ -1,12 +1,12 @@
 package server
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"hash"
 	"log"
 	"time"
@@ -32,9 +32,24 @@ type serverCrypt struct {
 
 // s must be normalised first.
 // otherwise could lead to unexpected results in blind index lookups.
+
 func (hmC *hmacCipher) generate(s string) []byte {
 	hmC.c.Reset()
 	hmC.c.Write([]byte(s))
+	return hmC.c.Sum(nil)
+}
+
+func (hmC *hmacCipher) generateFromByte(b []byte) []byte {
+	hmC.c.Reset()
+	hmC.c.Write(b)
+	return hmC.c.Sum(nil)
+}
+
+func (hmC *hmacCipher) generateFromSlices(b [][]byte) []byte {
+	hmC.c.Reset()
+	for _, i := range b {
+		hmC.c.Write(i)
+	}
 	return hmC.c.Sum(nil)
 }
 
@@ -114,11 +129,39 @@ func (sc *serverCrypt) generateEmailCipherTextBlob(email string, uuid uuid.UUID)
 	return eCtB
 }
 
-func (sc *serverCrypt) generateToken() (string, time.Time) {
-	return rand.Text(), time.Now().UTC().AddDate(0, 0, 14)
+func (sc *serverCrypt) generateToken() ([32]byte, time.Time) {
+	b := [32]byte{}
+	rand.Read(b[:])
+	return b, time.Now().UTC().AddDate(0, 0, 14)
 }
 
-func (sc *serverCrypt) generateUserCrypt(ac *db.RegisterConfig) (*db.AuthCrypt, error) {
+func (sc *serverCrypt) authenticateLogin(lc *db.LoginConfig, ac *db.AuthCrypt) (db.AuthSuccess, error) {
+	// no need to check if email/username valid. can't fetch ac without it to begin with
+	if (lc.LeftHanded != ac.LeftHanded) || (lc.Student != ac.Student) {
+		return db.AuthSuccess{}, db.ErrFailedToLogin
+	} else if !sc.verifyPassword(lc.Password, ac.PasswordHash, ac.PasswordSalt) {
+		return db.AuthSuccess{}, db.ErrInvalidPassword
+	}
+
+	// if refresh token expires within 24hrs just generate a new one
+	if time.Now().UTC().AddDate(0, 0, 1).Compare(ac.TokenValidTil) >= 0 {
+		tkn, vTil := sc.generateToken()
+		return db.AuthSuccess{
+			Token:         tkn,
+			NewToken:      true,
+			TokenValidTil: vTil,
+		}, nil
+	}
+
+	return db.AuthSuccess{
+		HashedToken:   sha256.Sum256(ac.RefreshToken[:]),
+		Token:         ac.RefreshToken,
+		NewToken:      false,
+		TokenValidTil: ac.TokenValidTil,
+	}, nil
+}
+
+func (sc *serverCrypt) generateUserCrypt(rc *db.RegisterConfig) (*db.AuthCrypt, error) {
 	uuid, err := uuid.NewV7()
 	if err != nil {
 		log.Printf("Failed to generate UUID: %v", err)
@@ -126,12 +169,13 @@ func (sc *serverCrypt) generateUserCrypt(ac *db.RegisterConfig) (*db.AuthCrypt, 
 	}
 
 	tkn, vTil := sc.generateToken()
+	hTkn := sha256.Sum256(tkn[:])
 
-	pH, slt := sc.generatePasswordHash(ac.Password)
+	pH, slt := sc.generatePasswordHash(rc.Password)
 
-	eBI := sc.generateEmailBlindIndex(ac.Email)
+	eBI := sc.generateEmailBlindIndex(rc.Email)
 
-	eCtB := sc.generateEmailCipherTextBlob(ac.Email, uuid)
+	eCtB := sc.generateEmailCipherTextBlob(rc.Email, uuid)
 
 	return &db.AuthCrypt{
 		UUID:                uuid,
@@ -139,12 +183,26 @@ func (sc *serverCrypt) generateUserCrypt(ac *db.RegisterConfig) (*db.AuthCrypt, 
 		EmailCipherTextBlob: eCtB,
 		PasswordHash:        pH,
 		PasswordSalt:        slt,
+		Student:             rc.Student,
+		LeftHanded:          rc.LeftHanded,
+		HashedRefreshToken:  hTkn,
 		RefreshToken:        tkn,
-		ValidTil:            vTil,
+		TokenValidTil:       vTil,
 	}, nil
 }
 
 func (sc *serverCrypt) verifyPassword(password string, hash []byte, salt []byte) bool {
 	pH, _ := generatePasswordHashWithSpecificSalt(password, salt)
-	return bytes.Equal(pH, hash)
+	if subtle.ConstantTimeCompare(pH, hash) == 0 {
+		return false
+	}
+	return true
+}
+
+func (sc *serverCrypt) verifyAccessToken(at accessTokenPayload) bool {
+	s := sc.hmac.generateFromByte(at.AccessToken)
+	if subtle.ConstantTimeCompare(at.AccessToken, s) == 0 {
+		return false
+	}
+	return true
 }
