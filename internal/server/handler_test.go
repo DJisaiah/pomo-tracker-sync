@@ -16,11 +16,11 @@ import (
 )
 
 type stubUserStore struct {
-	errResult error
+	ErrResult error
 }
 
-func (s *stubUserStore) AddUser(u *db.AuthCrypt) error {
-	return s.errResult
+func (s *stubUserStore) AddUser(username string, ac *db.AuthCrypt) error {
+	return s.ErrResult
 }
 
 func (s *stubUserStore) FetchCryptByEmail(lc *db.LoginConfig, eBI []byte) (db.AuthCrypt, error) {
@@ -242,7 +242,7 @@ func TestRegister(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.stubErr != nil {
-				sa.queries = &stubUserStore{errResult: tt.stubErr}
+				sa.queries = &stubUserStore{ErrResult: tt.stubErr}
 			}
 			req := httptest.NewRequest(tt.requestType, "/", strings.NewReader(tt.payload))
 			req.Header = tt.header

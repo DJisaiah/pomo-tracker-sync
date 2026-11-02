@@ -33,3 +33,4 @@ go.work.sum
 *.Identifier
 
 todo.md
+.zed/

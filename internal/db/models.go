@@ -23,16 +23,16 @@ type LoginConfig struct {
 }
 
 type AuthCrypt struct {
-	UUID                uuid.UUID
-	EmailBlindIndex     []byte
-	EmailCipherTextBlob []byte
-	PasswordHash        []byte
-	PasswordSalt        []byte
+	UUID                uuid.UUID `db:"user_uuid"`
+	EmailBlindIndex     []byte    `db:"email_blind_index"`
+	EmailCipherTextBlob []byte    `db:"encrypted_email"`
+	PasswordHash        []byte    `db:"password_hash"`
+	PasswordSalt        []byte    `db:"password_salt"`
 	Student             bool
-	LeftHanded          bool
-	HashedRefreshToken  [32]byte
+	LeftHanded          bool     `db:"left_handed"`
+	HashedRefreshToken  [32]byte `db:"token_hash"`
 	RefreshToken        [32]byte
-	TokenValidTil       time.Time
+	TokenValidTil       time.Time `db:"expires_at"`
 }
 
 type AuthSuccess struct {

@@ -50,11 +50,11 @@ func Load() (*Config, error) {
 	defer env.Close()
 
 	var aesMasterKey, hmacMasterKey []byte
-	switch {
-	case !dbURLExists:
+	if !dbURLExists {
 		log.Println("Error getting db url.")
 		return nil, ErrDBURLNotFound
-	case !aesExists:
+	}
+	if !aesExists {
 		log.Println("Error loading AES master key. Generating it.")
 		b := make([]byte, 32)
 		rand.Read(b)
@@ -64,8 +64,8 @@ func Load() (*Config, error) {
 			log.Println("Error writing AES master key to .env file")
 			return nil, ErrWritingToENVFile
 		}
-		fallthrough
-	case !hskExists:
+	}
+	if !hskExists {
 		log.Println("Error loading hash master key. Generating it.")
 		b := make([]byte, 32)
 		rand.Read(b)

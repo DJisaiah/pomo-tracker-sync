@@ -19,7 +19,7 @@ var (
 )
 
 type UserStore interface {
-	AddUser(u *db.AuthCrypt) error
+	AddUser(username string, ac *db.AuthCrypt) error
 	FetchCryptByUsername(lc *db.LoginConfig) (db.AuthCrypt, error)
 	FetchCryptByEmail(lc *db.LoginConfig, eBI []byte) (db.AuthCrypt, error)
 	FetchCryptByRefreshToken(rt []byte) (db.AuthCrypt, error)
@@ -125,9 +125,7 @@ func (sa *serverActions) registerUser(rc *db.RegisterConfig) ([32]byte, error) {
 		return [32]byte{}, err
 	}
 
-	// handle this in handler TODO
-	// is this still todo?
-	err = sa.queries.AddUser(ac)
+	err = sa.queries.AddUser(rc.Username, ac)
 	if err != nil {
 		log.Printf("Failed to add user: %v", err)
 		return [32]byte{}, err
