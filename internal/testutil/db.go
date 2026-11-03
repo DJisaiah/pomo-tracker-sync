@@ -1,10 +1,11 @@
-package db
+package testutil
 
 import (
 	"context"
 	"errors"
 	"log"
 
+	"github.com/DJisaiah/pomotracker-sync/internal/db"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
@@ -17,7 +18,7 @@ var (
 )
 
 type DBInstance struct {
-	Queries           *Queries
+	Queries           *db.Queries
 	postgresContainer *postgres.PostgresContainer
 }
 
@@ -40,7 +41,7 @@ func GetDBInstance() (DBInstance, error) {
 		return DBInstance{}, ErrFailedToGetConnectionStr
 	}
 
-	q, err := InitializePool(dbURL)
+	q, err := db.InitializePool(dbURL)
 	if err != nil {
 		log.Println(ErrFailedToInitPool, err)
 		return DBInstance{}, ErrFailedToInitPool
@@ -56,7 +57,7 @@ func (si *DBInstance) ClearTables() error {
 		sessions
 	`
 
-	if _, err := si.Queries.pool.Exec(context.Background(), qry); err != nil {
+	if err := si.Queries.Exec(context.Background(), qry); err != nil {
 		return err
 	}
 

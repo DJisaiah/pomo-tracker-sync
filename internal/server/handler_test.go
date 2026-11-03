@@ -13,33 +13,8 @@ import (
 	"github.com/DJisaiah/pomotracker-sync/internal/chars"
 	"github.com/DJisaiah/pomotracker-sync/internal/config"
 	"github.com/DJisaiah/pomotracker-sync/internal/db"
+	"github.com/DJisaiah/pomotracker-sync/internal/testutil"
 )
-
-type stubUserStore struct {
-	ErrResult error
-}
-
-func (s *stubUserStore) AddUser(username string, ac *db.AuthCrypt) error {
-	return s.ErrResult
-}
-
-func (s *stubUserStore) FetchCryptByEmail(lc *db.LoginConfig, eBI []byte) (db.AuthCrypt, error) {
-	//todo
-	return db.AuthCrypt{}, nil
-}
-
-func (s *stubUserStore) UpdateRefreshToken(ac *db.AuthCrypt, as *db.AuthSuccess) error {
-	return nil //todo
-}
-
-func (s *stubUserStore) FetchCryptByUsername(lc *db.LoginConfig) (db.AuthCrypt, error) {
-	// todo
-	return db.AuthCrypt{}, nil
-}
-
-func (q *stubUserStore) FetchCryptByRefreshToken(rt []byte) (db.AuthCrypt, error) {
-	return db.AuthCrypt{}, nil
-}
 
 func TestRegister(t *testing.T) {
 
@@ -242,7 +217,7 @@ func TestRegister(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.stubErr != nil {
-				sa.queries = &stubUserStore{ErrResult: tt.stubErr}
+				sa.queries = &testutil.StubUserStore{ErrResult: tt.stubErr}
 			}
 			req := httptest.NewRequest(tt.requestType, "/", strings.NewReader(tt.payload))
 			req.Header = tt.header
